@@ -1,0 +1,1716 @@
+const allMonsters = require("../gamedata/monsters");
+const { StatusEffectManager, STATUS_EFFECTS } = require("./statusEffects");
+const allItems = require("../gamedata/items");
+const allSkillTrees = require("../gamedata/skillTrees");
+const SkillTree = require("../models/SkillTree");
+const allPals = require("../gamedata/pets");
+
+/**
+ * Combat System Configuration
+ */
+const COMBAT_CONFIG = {
+    BASE_HIT_CHANCE: 0.9,
+    MIN_HIT_CHANCE: 0.05,
+    MAX_HIT_CHANCE: 0.99,
+    MIN_DAMAGE: 1,
+    MAX_TURNS: 50,
+    CRIT_MULTIPLIER: 1.5,
+    MAX_CRIT_CHANCE: 0.3,
+    PACK_LEADER_BONUS: 0.15,
+    MAX_PACK_BONUS: 0.5,
+};
+
+/**
+ * Combat Logger class for better battle logging
+ */
+class CombatLogger {
+    constructor() {
+        this.logs = [];
+    }
+
+    add(message) {
+        if (typeof message === 'string' && message.trim()) {
+            this.logs.push(message.trim());
+        }
+    }
+
+    addMultiple(messages) {
+        if (Array.isArray(messages)) {
+            messages.forEach(msg => this.add(msg));
+        }
+    }
+
+    clear() {
+        this.logs = [];
+    }
+
+    getLog() {
+        return this.logs.join('\n');
+    }
+}
+
+/**
+ * Safe stat operations with validation
+ */
+class StatManager {
+    static validateStats(stats) {
+        const defaultStats = { hp: 20, atk: 10, def: 5, spd: 10, luck: 0 };
+        
+        if (!stats || typeof stats !== 'object') {
+            return { ...defaultStats };
+        }
+
+        return {
+            hp: Math.max(1, Number(stats.hp) || defaultStats.hp),
+            atk: Math.max(1, Number(stats.atk) || defaultStats.atk),
+            def: Math.max(0, Number(stats.def) || defaultStats.def),
+            spd: Math.max(1, Number(stats.spd) || defaultStats.spd),
+            luck: Math.max(0, Number(stats.luck) || defaultStats.luck),
+            accuracy: Math.max(0.1, Number(stats.accuracy) || 1),
+            evasion: Math.max(0.1, Number(stats.evasion) || 1),
+        };
+    }
+
+    static cloneCreature(creature) {
+        if (!creature) throw new Error('Creature is required');
+        
+        try {
+            const cloned = JSON.parse(JSON.stringify(creature));
+            cloned.stats = this.validateStats(cloned.stats);
+            cloned.statusEffects = cloned.statusEffects || [];
+            cloned.skillBonuses = cloned.skillBonuses || {};
+            return cloned;
+        } catch (error) {
+            throw new Error(`Failed to clone creature: ${error.message}`);
+        }
+    }
+}
+
+/**
+ * Equipment manager with better error handling
+ */
+class EquipmentManager {
+    static getEffects(equipment) {
+        const effects = {};
+        
+        if (!equipment || typeof equipment !== 'object') {
+            return effects;
+        }
+
+        try {
+            Object.values(equipment).forEach(equipmentId => {
+                if (!equipmentId || !allItems[equipmentId]) return;
+
+                const item = allItems[equipmentId];
+                
+                // Special abilities
+                if (item.special) effects[item.special] = true;
+                if (item.stats?.special) effects[item.stats.special] = true;
+                
+                // Resistances
+                const resistanceMap = {
+                    fire_resist: 'fire_resistance',
+                    ice_resist: 'ice_resistance', 
+                    storm_resist: 'storm_resistance',
+                    wind_resist: 'wind_resistance',
+                    physical_resist: 'physical_resistance'
+                };
+                
+                Object.entries(resistanceMap).forEach(([itemProp, effectProp]) => {
+                    if (item[itemProp]) effects[effectProp] = item[itemProp];
+                });
+                
+                // Damage bonuses
+                ['fire_damage', 'ice_damage', 'storm_damage'].forEach(prop => {
+                    if (item[prop]) effects[prop] = item[prop];
+                });
+                
+                // Combat bonuses
+                const bonusMap = {
+                    dodge: 'dodge_bonus',
+                    crit: 'crit_bonus', 
+                    accuracy: 'accuracy_bonus'
+                };
+                
+                Object.entries(bonusMap).forEach(([itemProp, effectProp]) => {
+                    const value = item[itemProp] || item.stats?.[itemProp];
+                    if (value) effects[effectProp] = value;
+                });
+            });
+        } catch (error) {
+            console.error('Error processing equipment effects:', error);
+        }
+        
+        return effects;
+    }
+
+    static getResistances(equipment) {
+        const resistances = { fire: 0, ice: 0, storm: 0, physical: 0 };
+        
+        if (!equipment) return resistances;
+
+        try {
+            Object.values(equipment).forEach(itemId => {
+                if (!itemId || !allItems[itemId]) return;
+
+                const item = allItems[itemId];
+                if (item.fire_resist) resistances.fire += Number(item.fire_resist) || 0;
+                if (item.ice_resist) resistances.ice += Number(item.ice_resist) || 0;
+                if (item.storm_resist) resistances.storm += Number(item.storm_resist) || 0;
+                if (item.wind_resist) resistances.storm += Number(item.wind_resist) || 0;
+                if (item.physical_resist) resistances.physical += Number(item.physical_resist) || 0;
+            });
+        } catch (error) {
+            console.error('Error calculating resistances:', error);
+        }
+
+        return resistances;
+    }
+
+    static getMultiplier(equipment, statType) {
+        let multiplier = 1;
+        
+        if (!equipment) return multiplier;
+
+        try {
+            Object.values(equipment).forEach(itemId => {
+                if (!itemId || !allItems[itemId]) return;
+
+                const item = allItems[itemId];
+                const statMap = {
+                    accuracy: ['accuracyMultiplier', 'accuracy'],
+                    evasion: ['evasionMultiplier', 'evasion']
+                };
+                
+                if (statMap[statType]) {
+                    statMap[statType].forEach(prop => {
+                        const value = item.stats?.[prop] || item[prop];
+                        if (value && !isNaN(value)) {
+                            multiplier *= Number(value);
+                        }
+                    });
+                }
+            });
+        } catch (error) {
+            console.error(`Error calculating ${statType} multiplier:`, error);
+        }
+        
+        return Math.max(0.1, multiplier);
+    }
+}
+
+/**
+ * Type advantage calculator with Abyssal and Aeonic types
+ */
+class TypeAdvantage {
+    static ADVANTAGES = {
+        Beast:      { strong: ["Mystic", "Undead"],         weak: ["Mechanical", "Aeonic"] },
+        Mystic:     { strong: ["Undead", "Abyssal"],        weak: ["Beast", "Elemental"] },
+        Undead:     { strong: ["Abyssal", "Elemental"],     weak: ["Mystic", "Beast"] },
+        Abyssal:    { strong: ["Elemental", "Mechanical"],  weak: ["Undead", "Mystic"] },
+        Mechanical: { strong: ["Aeonic", "Beast"],          weak: ["Elemental", "Abyssal"] },
+        Elemental:  { strong: ["Mystic", "Mechanical"],     weak: ["Abyssal", "Undead"] },
+        Aeonic:     { strong: ["Beast", "Mystic"],          weak: ["Mechanical", "Elemental"] }
+    };
+
+    static calculate(attackerType, defenderType) {
+        if (!attackerType || !defenderType) return 1;
+
+        const advantages = this.ADVANTAGES[attackerType];
+        if (!advantages) return 1;
+
+        if (advantages.strong?.includes(defenderType)) return 1.5;
+        if (advantages.weak?.includes(defenderType)) return 0.75;
+        return 1;
+    }
+}
+
+/**
+ * Skill Tree Manager with Abyssal and Aeonic support
+ */
+class SkillManager {
+    static async ensureSkillTree(pet) {
+        if (!pet?.petId) throw new Error('Pet with petId is required');
+
+        try {
+            let skillTree = await SkillTree.findOne({ palId: pet.petId });
+            if (!skillTree) {
+                skillTree = new SkillTree({
+                    palId: pet.petId,
+                    skillPoints: Math.floor(pet.level / 5),
+                });
+                await skillTree.save();
+            }
+            return skillTree;
+        } catch (error) {
+            console.error('Error ensuring skill tree:', error);
+            throw error;
+        }
+    }
+
+    static async applySkillBonuses(creature, skillTree = null, battleType = 'dungeon', context = {}) {
+        if (!creature) throw new Error('Creature is required');
+
+        let modifiedCreature = StatManager.cloneCreature(creature);
+        
+        const palData = allPals[creature.basePetId];
+        const baseStats = palData?.baseStats || {};
+        
+        modifiedCreature.stats = StatManager.validateStats({
+            ...baseStats,
+            ...modifiedCreature.stats
+        });
+
+        if (!skillTree?.unlockedSkills?.length) {
+            return modifiedCreature;
+        }
+
+        try {
+            const typeSkills = allSkillTrees[creature.type]?.skills || {};
+
+            for (let i = 0; i < skillTree.unlockedSkills.length; i++) {
+                const unlockedSkill = skillTree.unlockedSkills[i];
+                
+                if (!unlockedSkill.skillId || !unlockedSkill.level) continue;
+
+                const skillData = typeSkills[unlockedSkill.skillId];
+                if (!skillData?.effects?.[unlockedSkill.level - 1]) continue;
+
+                if (skillData.battleType && skillData.battleType !== battleType) {
+                    continue;
+                }
+
+                if (unlockedSkill.skillId === 'pack_hunter' && battleType === 'party') {
+                    const beastCount = context.beastCount || 1;
+                    if (beastCount <= 1) {
+                        continue; 
+                    }
+                }
+
+                const effect = skillData.effects[unlockedSkill.level - 1];
+                const bonus = effect.bonus || {};
+
+                // Apply stat bonuses
+                this.applyStatBonus(modifiedCreature.stats, 'atk', bonus.atkMultiplier, true);
+                this.applyStatBonus(modifiedCreature.stats, 'def', bonus.defBonus, false);
+                this.applyStatBonus(modifiedCreature.stats, 'spd', bonus.spdBonus, false);
+                this.applyStatBonus(modifiedCreature.stats, 'luck', bonus.critChance ? bonus.critChance * 100 : 0, false);
+                this.applyStatBonus(modifiedCreature.stats, 'luck', bonus.luckBonus, false);
+                this.applyStatBonus(modifiedCreature.stats, 'accuracy', bonus.accuracy, true);
+
+                // Apply all-stats bonus
+                if (bonus.allStats && !isNaN(bonus.allStats)) {
+                    ['atk', 'def', 'spd'].forEach(stat => {
+                        modifiedCreature.stats[stat] = Math.floor(modifiedCreature.stats[stat] * bonus.allStats);
+                    });
+                }
+
+                // Magic damage and damage reduction
+                if (bonus.magicDamage && !isNaN(bonus.magicDamage)) {
+                    modifiedCreature.stats.atk = Math.floor(modifiedCreature.stats.atk * bonus.magicDamage);
+                }
+                
+                if (bonus.damageReduction && !isNaN(bonus.damageReduction)) {
+                    modifiedCreature.stats.damageReduction = 
+                        (modifiedCreature.stats.damageReduction || 0) + bonus.damageReduction;
+                }
+
+                // Store skill bonuses
+                Object.assign(modifiedCreature.skillBonuses, bonus);
+            }
+        } catch (error) {
+            console.error('Error applying skill bonuses:', error);
+        }
+
+        modifiedCreature.stats = StatManager.validateStats(modifiedCreature.stats);
+        return modifiedCreature;
+    }
+
+    static applyStatBonus(stats, statName, bonus, isMultiplier = false) {
+        if (bonus == null || isNaN(bonus)) return;
+
+        if (isMultiplier) {
+            stats[statName] = Math.floor(stats[statName] * (1 + bonus));
+        } else {
+            stats[statName] += bonus;
+        }
+    }
+
+    static checkActivation(creature, skillType, currentHp = null, maxHp = null) {
+        if (!creature?.skillBonuses) return null;
+
+        try {
+            switch (skillType) {
+                case "dodge":
+                    return this.checkDodgeActivation(creature);
+                case "counter":
+                    return this.checkCounterActivation(creature);
+                case "execute":
+                    return this.checkExecuteActivation(creature, currentHp, maxHp);
+                case "divine_protection":
+                    return this.checkDivineProtectionActivation(creature);
+                case "overload":
+                    return this.checkOverloadActivation(creature);
+                case "dark_ritual":
+                    return this.checkDarkRitualActivation(creature, currentHp, maxHp);
+                case "lich_transformation":
+                    return this.checkLichTransformActivation(creature);
+                case "lifesteal":
+                    return this.checkLifestealActivation(creature);
+                case "multiAttack":
+                    return this.checkMultiAttackActivation(creature);
+                case "hpRegen":
+                    return this.checkHpRegenActivation(creature, maxHp);
+                case "revive":
+                    return this.checkReviveActivation(creature);
+                case "chainReaction":
+                    return this.checkChainReactionActivation(creature);
+                case "selfRepair":
+                    return this.checkSelfRepairActivation(creature, maxHp);
+                case "elemental_shield":
+                    return this.checkElementalShieldActivation(creature);
+                case "elemental_storm":
+                    return this.checkElementalStormActivation(creature);
+                case "abyssal_devourer":
+                    return this.checkAbyssalDevourerActivation(creature);
+                case "temporal_echo":
+                    return this.checkTemporalEchoActivation(creature);
+                case "paradox_loop":
+                    return this.checkParadoxLoopActivation(creature);
+                default:
+                    return null;
+            }
+        } catch (error) {
+            console.error(`Error checking skill activation for ${skillType}:`, error);
+            return null;
+        }
+    }
+
+    // Existing skill checks
+    static checkDodgeActivation(creature) {
+        const chance = creature.skillBonuses.dodgeChance;
+        if (chance && Math.random() < chance) {
+            return {
+                type: "dodge",
+                message: `**${creature.nickname || creature.name}** dodges with feral instinct!`,
+            };
+        }
+        return null;
+    }
+
+    static checkCounterActivation(creature) {
+        const chance = creature.skillBonuses.counterChance;
+        if (chance && Math.random() < chance) {
+            return {
+                type: "counter",
+                message: `**${creature.nickname || creature.name}** counter-attacks!`,
+                damage: Math.floor(creature.stats.atk * 0.7)
+            };
+        }
+        return null;
+    }
+
+    static checkExecuteActivation(creature, currentHp, maxHp) {
+        if (!currentHp || !maxHp) return null;
+        
+        const threshold = creature.skillBonuses.executeThreshold;
+        if (threshold && (currentHp / maxHp) <= threshold) {
+            return {
+                type: "execute",
+                multiplier: creature.skillBonuses.executeMultiplier || 2.0,
+                message: `🩸 **Apex Predator!** ${creature.nickname || creature.name} delivers a devastating finishing blow!`
+            };
+        }
+        return null;
+    }
+
+    static checkDivineProtectionActivation(creature) {
+        const chance = creature.skillBonuses.divineProtection;
+        if (chance && Math.random() < chance) {
+            return {
+                type: "divine_protection",
+                message: `✨ Divine protection shields **${creature.nickname || creature.name}**!`,
+            };
+        }
+        return null;
+    }
+
+    static checkOverloadActivation(creature) {
+        const chance = creature.skillBonuses.overloadChance;
+        if (chance && Math.random() < chance) {
+            return {
+                type: "overload",
+                multiplier: creature.skillBonuses.overloadDamage || 2.0,
+                message: `⚡ **System Overload!** ${creature.nickname || creature.name}'s circuits surge with power!`
+            };
+        }
+        return null;
+    }
+
+    static checkDarkRitualActivation(creature, currentHp, maxHp) {
+        const hpSacrifice = creature.skillBonuses.hpSacrifice;
+        const powerBonus = creature.skillBonuses.powerBonus;
+        const chance = creature.skillBonuses.chance;
+        
+        if (hpSacrifice && powerBonus && chance && Math.random() < chance) {
+            const sacrificeAmount = Math.floor(maxHp * hpSacrifice);
+            if (currentHp > sacrificeAmount) {
+                return {
+                    type: "dark_ritual",
+                    sacrifice: sacrificeAmount,
+                    multiplier: powerBonus,
+                    message: `🩸 **Dark Ritual!** ${creature.nickname || creature.name} sacrifices life force for power!`
+                };
+            }
+        }
+        return null;
+    }
+
+    static checkLichTransformActivation(creature) {
+        const invulnerability = creature.skillBonuses.invulnerability;
+        const powerMultiplier = creature.skillBonuses.powerMultiplier;
+        const chance = creature.skillBonuses.chance;
+        
+        if (invulnerability && powerMultiplier && chance && Math.random() < chance) {
+            return {
+                type: "lich_transformation",
+                duration: invulnerability,
+                multiplier: powerMultiplier,
+                message: `💀 **Lich Transformation!** ${creature.nickname || creature.name} transcends mortal limits!`
+            };
+        }
+        return null;
+    }
+
+    static checkLifestealActivation(creature) {
+        const lifesteal = creature.skillBonuses.lifesteal;
+        if (lifesteal) {
+            return {
+                type: "lifesteal",
+                percentage: lifesteal,
+                message: `🩸 **Life Drain!** ${creature.nickname || creature.name} absorbs life energy!`
+            };
+        }
+        return null;
+    }
+
+    static checkMultiAttackActivation(creature) {
+        const chance = creature.skillBonuses.multiAttack;
+        if (chance && Math.random() < chance) {
+            return {
+                type: "multiAttack",
+                message: `⚡ **System Enhancement!** ${creature.nickname || creature.name} attacks multiple times!`
+            };
+        }
+        return null;
+    }
+
+    static checkHpRegenActivation(creature, maxHp) {
+        const regenRate = creature.skillBonuses.hpRegen;
+        if (regenRate && maxHp) {
+            const healAmount = Math.floor(maxHp * regenRate);
+            return {
+                type: "hpRegen",
+                heal: healAmount,
+                message: `✨ **Healing Light!** ${creature.nickname || creature.name} regenerates ${healAmount} HP!`
+            };
+        }
+        return null;
+    }
+
+    static checkReviveActivation(creature) {
+        const chance = creature.skillBonuses.reviveChance;
+        if (chance && Math.random() < chance) {
+            return {
+                type: "revive",
+                message: `🌟 **Miraculous Revival!** ${creature.nickname || creature.name} refuses to fall!`
+            };
+        }
+        return null;
+    }
+
+    static checkChainReactionActivation(creature) {
+        const chance = creature.skillBonuses.chainReaction;
+        if (chance && Math.random() < chance) {
+            return {
+                type: "chainReaction",
+                message: `⚡ **Chain Reaction!** ${creature.nickname || creature.name}'s overload spreads!`,
+                damage: Math.floor(creature.stats.atk * 0.5)
+            };
+        }
+        return null;
+    }
+
+    static checkSelfRepairActivation(creature, maxHp) {
+        const repairRate = creature.skillBonuses.selfRepair;
+        if (repairRate && maxHp) {
+            const repairAmount = Math.floor(maxHp * repairRate);
+            return {
+                type: "selfRepair",
+                heal: repairAmount,
+                message: `🔧 **Self Repair!** ${creature.nickname || creature.name} automatically repairs damage!`
+            };
+        }
+        return null;
+    }
+
+    static checkElementalShieldActivation(creature) {
+        const chance = creature.skillBonuses.shieldChance;
+        if (chance && Math.random() < chance) {
+            return {
+                type: "elemental_shield",
+                absorb: creature.skillBonuses.elementalAbsorb || 0.5,
+                reflection: creature.skillBonuses.reflection || 0.2,
+                message: `🛡️ **Elemental Shield!** ${creature.nickname || creature.name} activates an elemental shield!`
+            };
+        }
+        return null;
+    }
+
+    static checkElementalStormActivation(creature) {
+        const chance = creature.skillBonuses.stormChance;
+        if (chance && Math.random() < chance) {
+            return {
+                type: "elemental_storm",
+                multiplier: creature.skillBonuses.damage || 2.5,
+                areaAttack: creature.skillBonuses.areaAttack || true,
+                multiStatus: creature.skillBonuses.multiStatus || true,
+                message: `🌪️ **Elemental Storm!** ${creature.nickname || creature.name} unleashes elemental fury!`
+            };
+        }
+        return null;
+    }
+
+    // NEW: Abyssal skill activations
+    static checkAbyssalDevourerActivation(creature) {
+        const lifesteal = creature.skillBonuses.lifesteal;
+        const areaDamage = creature.skillBonuses.areaDamage;
+        const instantFear = creature.skillBonuses.instantFear;
+        
+        if (areaDamage && Math.random() < (creature.skillBonuses.abyssalChance || 0.1)) {
+            return {
+                type: "abyssal_devourer",
+                lifesteal: lifesteal || 0.25,
+                multiplier: areaDamage,
+                instantFear: instantFear,
+                message: `🌊 **Abyssal Devourer!** ${creature.nickname || creature.name} unleashes void tentacles!`
+            };
+        }
+        return null;
+    }
+
+    // NEW: Aeonic skill activations
+    static checkTemporalEchoActivation(creature) {
+        const echoChance = creature.skillBonuses.echoChance;
+        const echoDamageMultiplier = creature.skillBonuses.echoDamageMultiplier;
+        
+        if (echoChance && echoDamageMultiplier && Math.random() < echoChance) {
+            return {
+                type: "temporal_echo",
+                multiplier: echoDamageMultiplier,
+                message: `⏰ **Temporal Echo!** ${creature.nickname || creature.name}'s attack echoes through time!`
+            };
+        }
+        return null;
+    }
+
+    static checkParadoxLoopActivation(creature) {
+        const damageImmunity = creature.skillBonuses.damageImmunity;
+        const paradoxChance = creature.skillBonuses.paradoxChance;
+        
+        if (damageImmunity && paradoxChance && Math.random() < paradoxChance) {
+            return {
+                type: "paradox_loop",
+                immunity: true,
+                recoilPercent: creature.skillBonuses.recoilPercent || 0.5,
+                message: `🔮 **Paradox Loop!** ${creature.nickname || creature.name} phases out of time!`
+            };
+        }
+        return null;
+    }
+}
+
+/**
+ * Hit chance calculator
+ */
+class HitCalculator {
+    static compute(attackerStats, defenderStats, attackerEquipment = null, defenderEquipment = null) {
+        try {
+            const attackerAccuracy = (attackerStats.accuracy || 1) * 
+                EquipmentManager.getMultiplier(attackerEquipment, 'accuracy');
+            const defenderEvasion = (defenderStats.evasion || 1) * 
+                EquipmentManager.getMultiplier(defenderEquipment, 'evasion');
+            
+            const hitChance = Math.min(
+                COMBAT_CONFIG.MAX_HIT_CHANCE, 
+                Math.max(
+                    COMBAT_CONFIG.MIN_HIT_CHANCE, 
+                    COMBAT_CONFIG.BASE_HIT_CHANCE * attackerAccuracy / defenderEvasion
+                )
+            );
+            
+            return { hitChance };
+        } catch (error) {
+            console.error('Error computing hit chance:', error);
+            return { hitChance: COMBAT_CONFIG.BASE_HIT_CHANCE };
+        }
+    }
+}
+
+/**
+ * Damage calculator with comprehensive validation
+ */
+class DamageCalculator {
+    static calculate(attacker, defender, attackerType, defenderType, defenderResistances = {}) {
+        try {
+            const attackerStats = StatManager.validateStats(attacker);
+            const defenderStats = StatManager.validateStats(defender);
+            
+            let baseDamage = Math.max(
+                COMBAT_CONFIG.MIN_DAMAGE, 
+                Math.floor(attackerStats.atk - defenderStats.def / 2)
+            );
+
+            const typeMultiplier = TypeAdvantage.calculate(attackerType, defenderType);
+            baseDamage = Math.floor(baseDamage * typeMultiplier);
+
+            const critChance = Math.min(
+                COMBAT_CONFIG.MAX_CRIT_CHANCE, 
+                (attackerStats.luck || 0) * 0.01
+            );
+            const isCrit = Math.random() < critChance;
+            if (isCrit) {
+                baseDamage = Math.floor(baseDamage * COMBAT_CONFIG.CRIT_MULTIPLIER);
+            }
+
+            let resistanceMultiplier = 1;
+            if (defenderResistances && attackerType === "Elemental") {
+                const totalResistance = (defenderResistances.fire || 0) + 
+                                      (defenderResistances.ice || 0) + 
+                                      (defenderResistances.storm || 0);
+                resistanceMultiplier = Math.max(0.1, 1 - totalResistance / 100);
+            }
+
+            return {
+                damage: Math.floor(baseDamage * resistanceMultiplier),
+                typeMultiplier,
+                isCrit,
+                resistanceApplied: resistanceMultiplier < 1
+            };
+        } catch (error) {
+            console.error('Error calculating damage:', error);
+            return {
+                damage: COMBAT_CONFIG.MIN_DAMAGE,
+                typeMultiplier: 1,
+                isCrit: false,
+                resistanceApplied: false
+            };
+        }
+    }
+}
+
+/**
+ * Turn order calculator
+ */
+class TurnOrderManager {
+    static calculate(creature1, creature2, creature1Name, creature2Name) {
+        try {
+            let speed1 = creature1.stats?.spd || 10;
+            let speed2 = creature2.stats?.spd || 10;
+
+            if (creature1.statusEffects) {
+                const slowEffect = creature1.statusEffects.find(effect => effect.type === 'slow');
+                if (slowEffect) speed1 = Math.floor(speed1 * 0.5);
+            }
+
+            if (creature2.statusEffects) {
+                const slowEffect = creature2.statusEffects.find(effect => effect.type === 'slow');
+                if (slowEffect) speed2 = Math.floor(speed2 * 0.5);
+            }
+
+            if (speed1 > speed2) {
+                return { first: creature1, second: creature2, firstName: creature1Name, secondName: creature2Name };
+            } else if (speed2 > speed1) {
+                return { first: creature2, second: creature1, firstName: creature2Name, secondName: creature1Name };
+            } else {
+                const firstGoesFirst = Math.random() < 0.5;
+                return firstGoesFirst ?
+                    { first: creature1, second: creature2, firstName: creature1Name, secondName: creature2Name } :
+                    { first: creature2, second: creature1, firstName: creature2Name, secondName: creature1Name };
+            }
+        } catch (error) {
+            console.error('Error calculating turn order:', error);
+            return { first: creature1, second: creature2, firstName: creature1Name, secondName: creature2Name };
+        }
+    }
+}
+
+/**
+ * Pack leader bonus calculator
+ */
+class PackLeaderManager {
+    static apply(creature, beastCount = 1) {
+        if (creature.type !== "Beast" || beastCount <= 1) return creature;
+        
+        try {
+            const modifiedCreature = StatManager.cloneCreature(creature);
+            const bonus = Math.min(
+                COMBAT_CONFIG.MAX_PACK_BONUS, 
+                (beastCount - 1) * COMBAT_CONFIG.PACK_LEADER_BONUS
+            );
+            
+            modifiedCreature.stats.atk = Math.floor(modifiedCreature.stats.atk * (1 + bonus));
+            return modifiedCreature;
+        } catch (error) {
+            console.error('Error applying pack leader bonus:', error);
+            return creature;
+        }
+    }
+}
+
+/**
+ * Utility functions
+ */
+const Utils = {
+    romanToInt(roman) {
+        if (!roman || typeof roman !== 'string') return 1;
+        
+        const romanMap = { I: 1, V: 5, X: 10 };
+        let total = 0;
+        
+        try {
+            for (let i = 0; i < roman.length; i++) {
+                const currentVal = romanMap[roman[i]];
+                const nextVal = romanMap[roman[i + 1]];
+                
+                if (!currentVal) continue;
+                
+                if (nextVal && nextVal > currentVal) {
+                    total -= currentVal;
+                } else {
+                    total += currentVal;
+                }
+            }
+        } catch (error) {
+            console.error('Error converting roman numeral:', error);
+            return 1;
+        }
+        
+        return total || 1;
+    },
+
+    checkSpecialAbility(ability, chance) {
+        if (typeof chance !== 'number' || chance <= 0) return false;
+        return Math.random() < chance;
+    },
+
+    safeGenerateEnemy(dungeon, floor, isBoss = false) {
+        try {
+            if (!dungeon || !dungeon.enemyPool) {
+                throw new Error('Invalid dungeon data');
+            }
+
+            const enemyId = isBoss && dungeon.boss
+                ? dungeon.boss
+                : dungeon.enemyPool[Math.floor(Math.random() * dungeon.enemyPool.length)];
+            
+            const enemyBase = allMonsters[enemyId];
+            if (!enemyBase) {
+                throw new Error(`Monster not found: ${enemyId}`);
+            }
+
+            const tierValue = this.romanToInt(dungeon.tier);
+            const scaleFactor = 1 + 0.2 * (floor - 1) + 0.1 * tierValue;
+
+            return {
+                name: enemyBase.name,
+                type: enemyBase.type,
+                stats: StatManager.validateStats({
+                    hp: Math.round(enemyBase.baseStats.hp * scaleFactor),
+                    atk: Math.round(enemyBase.baseStats.atk * scaleFactor),
+                    def: Math.round(enemyBase.baseStats.def * scaleFactor),
+                    spd: Math.round(enemyBase.baseStats.spd * scaleFactor),
+                }),
+            };
+        } catch (error) {
+            console.error('Error generating enemy:', error);
+            return {
+                name: "Unknown Beast",
+                type: "Beast",
+                stats: StatManager.validateStats({ hp: 30, atk: 15, def: 8, spd: 10 }),
+            };
+        }
+    },
+
+    safeGenerateDungeonRewards(dungeon, floor) {
+        try {
+            if (!dungeon?.baseRewards) return { gold1: 0, xp1: 0, loot: [], egg: null };
+
+            const { baseRewards, scaleFactors = {}, floors, guaranteedReward } = dungeon;
+            const { gold = [0, 0], xp = [0, 0], lootTable = [], eggTable = [] } = baseRewards;
+
+            const goldRange = Array.isArray(gold) ? gold : [0, 0];
+            const xpRange = Array.isArray(xp) ? xp : [0, 0];
+
+            const gold1 = Math.floor(
+                (Math.random() * Math.max(0, goldRange[1] - goldRange[0]) + goldRange[0]) *
+                Math.pow(scaleFactors.gold || 1, floor - 1)
+            );
+
+            const xp1 = Math.floor(
+                (Math.random() * Math.max(0, xpRange[1] - xpRange[0]) + xpRange[0]) *
+                Math.pow(scaleFactors.xp || 1, floor - 1)
+            );
+
+            const loot = lootTable
+                .filter(item => item && typeof item === 'object')
+                .map(item => {
+                    const chance = item.baseChance * Math.pow(scaleFactors.lootChance || 1, floor - 1);
+                    if (Math.random() < chance) {
+                        const quantityRange = item.quantityRange || [1, 1];
+                        return {
+                            itemId: item.itemId,
+                            quantity: Math.floor(Math.random() * 
+                                (quantityRange[1] - quantityRange[0] + 1)) + quantityRange[0],
+                        };
+                    }
+                    return null;
+                })
+                .filter(item => item !== null);
+
+            const eggDrop = eggTable
+                .filter(e => e && typeof e === 'object')
+                .find(e => Math.random() < e.chance * Math.pow(scaleFactors.lootChance || 1, floor - 1));
+
+            if (floor === floors && guaranteedReward) {
+                loot.push(guaranteedReward);
+            }
+
+            return {
+                gold1,
+                xp1,
+                loot,
+                egg: eggDrop ? { itemId: eggDrop.itemId, quantity: 1 } : null,
+            };
+        } catch (error) {
+            console.error('Error generating dungeon rewards:', error);
+            return { gold1: 0, xp1: 0, loot: [], egg: null };
+        }
+    }
+};
+
+/**
+ * Weapon ability processor with improved error handling
+ */
+class WeaponAbilityProcessor {
+    static ABILITIES = {
+        lightning_strike: { chance: 0.25, multiplier: 0.5, message: "Lightning Strike", icon: "⚡" },
+        lightning_fork: { chance: 0.25, multiplier: 0.5, message: "Lightning Strike", icon: "⚡" },
+        shadow_strike: { chance: 0.25, multiplier: 1.0, message: "Shadow Strike", icon: "🌑" },
+        shadow_blend: { chance: 0.25, multiplier: 1.0, message: "Shadow Strike", icon: "🌑" },
+        volcanic_edge: { chance: 0.2, multiplier: 0.4, message: "Volcanic Edge", icon: "🌋" },
+        terror_strike: { chance: 0.15, multiplier: 1.5, message: "Terror Strike", icon: "😱" },
+        divine_thrust: { chance: 0.3, multiplier: 0.6, message: "Divine Thrust", icon: "✨" },
+        frost_pierce: { chance: 0.25, multiplier: 0.3, message: "Frost Pierce", icon: "❄️", statusEffect: "freeze" },
+        crystal_shatter: { chance: 0.2, multiplier: 0.4, message: "Crystal Shatter", icon: "💎" },
+        wind_shot: { chance: 0.3, multiplier: 0.35, message: "Wind Shot", icon: "💨" },
+        soul_harvest: { chance: 0.2, multiplier: 0.8, message: "Soul Harvest", icon: "👻" },
+        crushing_blow: { chance: 0.25, multiplier: 0.6, message: "Crushing Blow", icon: "🔨" },
+        void_lash: { chance: 0.2, multiplier: 0.5, message: "Void Lash", icon: "🌌" },
+        ancient_fury: { chance: 0.15, multiplier: 1.2, message: "Ancient Fury", icon: "⚔️" },
+        molten_chain: { chance: 0.2, multiplier: 0.45, message: "Molten Chain", icon: "🌋", statusEffect: "burn" },
+        spirit_channel: { chance: 0.25, multiplier: 0.4, message: "Spirit Channel", icon: "✨" },
+        burn_chance: { chance: 0.2, multiplier: 0, message: "Burning Blade", icon: "🔥", statusEffect: "burn" }
+    };
+
+    static process(attacker, equipmentEffects, attackerName, logger) {
+        let damage = 0;
+        let activated = false;
+        let statusEffects = [];
+
+        try {
+            for (const [ability, active] of Object.entries(equipmentEffects)) {
+                if (!active || activated) continue;
+
+                const abilityData = this.ABILITIES[ability];
+                if (!abilityData) continue;
+
+                if (Utils.checkSpecialAbility(ability, abilityData.chance)) {
+                    if (abilityData.multiplier > 0) {
+                        damage = Math.floor(attacker.atk * abilityData.multiplier);
+                        activated = true;
+                    }
+                    
+                    if (abilityData.statusEffect) {
+                        statusEffects.push(abilityData.statusEffect);
+                    }
+                    
+                    logger.add(`${abilityData.icon} **${abilityData.message}!** ${attackerName}'s weapon unleashes its power!`);
+                    
+                    if (activated) break;
+                }
+            }
+        } catch (error) {
+            console.error('Error processing weapon abilities:', error);
+        }
+
+        return { damage, activated, statusEffects };
+    }
+}
+
+/**
+ * Status effect processor with new Abyssal/Aeonic effects
+ */
+class StatusProcessor {
+    static inflictStatus(attacker, target, attackerName, logger) {
+        try {
+            if (attacker.skillBonuses?.statusInflict) {
+                Object.entries(attacker.skillBonuses.statusInflict).forEach(([effectName, chance]) => {
+                    if (Math.random() < chance) {
+                        StatusEffectManager.applyStatusEffect(target, effectName);
+                        const effectDisplayName = STATUS_EFFECTS[effectName]?.name || effectName;
+                        logger.add(`🌑 **${attackerName}** inflicts ${effectDisplayName}!`);
+                    }
+                });
+            }
+
+            if (attacker.skillBonuses?.statusChance) {
+                Object.entries(attacker.skillBonuses.statusChance).forEach(([effectName, chance]) => {
+                    if (Math.random() < chance) {
+                        StatusEffectManager.applyStatusEffect(target, effectName);
+                        const effectDisplayName = STATUS_EFFECTS[effectName]?.name || effectName;
+                        const statusIcon = this.getStatusIcon(effectName);
+                        logger.add(`${statusIcon} **${attackerName}** inflicts ${effectDisplayName}!`);
+                    }
+                });
+            }
+
+            // Handle special Abyssal effects
+            if (attacker.skillBonuses?.drownChance && Math.random() < attacker.skillBonuses.drownChance) {
+                StatusEffectManager.applyStatusEffect(target, 'drown');
+                logger.add(`🌊 **${attackerName}** drowns the enemy in abyssal waters!`);
+            }
+
+            if (attacker.skillBonuses?.fearChance && Math.random() < attacker.skillBonuses.fearChance) {
+                StatusEffectManager.applyStatusEffect(target, 'fear');
+                logger.add(`😱 **${attackerName}** strikes terror into the enemy!`);
+            }
+
+            if (attacker.skillBonuses?.silenceChance && Math.random() < attacker.skillBonuses.silenceChance) {
+                StatusEffectManager.applyStatusEffect(target, 'silence');
+                logger.add(`🔇 **${attackerName}** silences the enemy!`);
+            }
+        } catch (error) {
+            console.error('Error processing status infliction:', error);
+        }
+    }
+
+    static getStatusIcon(effectName) {
+        const iconMap = {
+            burn: "🔥",
+            freeze: "❄️", 
+            shock: "⚡",
+            poison: "💀",
+            fear: "😱",
+            drown: "🌊",
+            silence: "🔇",
+            decay: "⏳",
+            slow: "🐌"
+        };
+        return iconMap[effectName] || "🌑";
+    }
+
+    static checkImmunity(equipment, statusType) {
+        if (!equipment) return false;
+        
+        try {
+            return Object.values(equipment).some(itemId => {
+                if (!itemId || !allItems[itemId]) return false;
+                
+                const item = allItems[itemId];
+                return item.stats?.immuneToStatus === true || 
+                       item.immuneToStatus === true ||
+                       (item.statusResistance && item.statusResistance[statusType] >= 1.0);
+            });
+        } catch (error) {
+            console.error('Error checking status immunity:', error);
+            return false;
+        }
+    }
+}
+
+/**
+ * Equipment effect processors
+ */
+class EquipmentEffectProcessor {
+    static processDefensive(defender, defenderEquipmentEffects, defenderName, damage, logger) {
+        let damageReduction = 0;
+        let statusEffects = [];
+
+        try {
+            const effects = {
+                shadow_step: { chance: 0.15, reduction: 0.2, message: "moves like a shadow", icon: "🌑" },
+                shadow_blend: { chance: 0.15, reduction: 0.2, message: "moves like a shadow", icon: "🌑" },
+                spirit_guard: { chance: 0.25, reduction: 0.3, message: "'s spirit guardian provides protection", icon: "👻" },
+                void_absorption: { chance: 0.2, reduction: 0.5, message: "'s void shield absorbs the attack", icon: "🌌" },
+                shield_block: { chance: 0.25, reduction: 0.2, message: "'s shield blocks some damage", icon: "🛡️" }
+            };
+
+            const counterEffects = {
+                burning_counter: { chance: 0.3, status: "burn", message: "'s buckler burns the attacker", icon: "🔥" },
+                frost_counter: { chance: 0.25, status: "freeze", message: "'s shield freezes the attacker", icon: "❄️" },
+                shock_counter: { chance: 0.2, status: "shock", message: "'s shield electrifies the attacker", icon: "⚡" }
+            };
+
+            Object.entries(defenderEquipmentEffects).forEach(([effect, value]) => {
+                if (effects[effect] && Math.random() < effects[effect].chance) {
+                    logger.add(`${effects[effect].icon} **${defenderName}** ${effects[effect].message}!`);
+                    damageReduction += Math.floor(damage * effects[effect].reduction);
+                }
+
+                if (counterEffects[effect] && Math.random() < counterEffects[effect].chance) {
+                    statusEffects.push(counterEffects[effect].status);
+                    logger.add(`${counterEffects[effect].icon} **${defenderName}** ${counterEffects[effect].message}!`);
+                }
+            });
+
+            if (defender.equipment?.shield && allItems[defender.equipment.shield] && Math.random() < 0.2) {
+                const shieldItem = allItems[defender.equipment.shield];
+                const blockAmount = Math.floor(damage * 0.15);
+                damageReduction += blockAmount;
+                logger.add(`🛡️ **${defenderName}**'s ${shieldItem.name} blocks ${blockAmount} damage!`);
+            }
+        } catch (error) {
+            console.error('Error processing defensive equipment effects:', error);
+        }
+
+        return { damageReduction, statusEffects };
+    }
+
+    static processOffensive(attacker, attackerEquipmentEffects, attackerName, logger) {
+        let damageModifier = 1;
+        let statusEffects = [];
+
+        try {
+            const effects = {
+                frost_aura: { chance: 0.2, status: "slow", message: "'s frost aura slows the enemy", icon: "❄️" },
+                flame_trail: { chance: 0.15, status: "burn", message: " leaves a trail of flames", icon: "🔥" },
+                mana_regeneration: { chance: 0.1, modifier: 1.1, message: "'s robes channel magical energy", icon: "✨" },
+                echo_sight: { chance: 0.2, modifier: 1.15, message: "'s diadem reveals enemy weaknesses", icon: "🔮" },
+                ancient_wisdom: { chance: 0.15, modifier: 1.1, message: " channels ancient knowledge", icon: "📜" },
+                soul_communion: { chance: 0.2, modifier: 1.12, message: " communes with spirits for guidance", icon: "👻" },
+                terror_aura: { chance: 0.25, status: "fear", message: "'s terrifying presence instills fear", icon: "😱" }
+            };
+
+            Object.entries(attackerEquipmentEffects).forEach(([effect, value]) => {
+                const effectData = effects[effect];
+                if (!effectData) return;
+
+                if (Math.random() < effectData.chance) {
+                    if (effectData.status) {
+                        statusEffects.push(effectData.status);
+                    }
+                    if (effectData.modifier) {
+                        damageModifier *= effectData.modifier;
+                    }
+                    logger.add(`${effectData.icon} **${attackerName}** ${effectData.message}!`);
+                }
+            });
+        } catch (error) {
+            console.error('Error processing offensive equipment effects:', error);
+        }
+
+        return { damageModifier, statusEffects };
+    }
+}
+
+/**
+ * Main Combat Engine with Abyssal and Aeonic support
+ */
+class CombatEngine {
+    constructor() {
+        this.logger = new CombatLogger();
+    }
+
+    async simulateDungeonBattle(pal, enemy, potionEffects = {}, equipmentEffects = {}, 
+                               startingHp = null, palType = "Beast", enemyType = "Beast", 
+                               skillTree = null, battleType = "dungeon", context = {}) {
+        try {
+            const enhancedPal = await SkillManager.applySkillBonuses(pal, skillTree, battleType, context);
+            let palCurrentHp = startingHp !== null ? startingHp : enhancedPal.stats.hp;
+            let enemyCurrentHp = enemy.stats.hp;
+            
+            const palResistances = EquipmentManager.getResistances(enhancedPal.equipment);
+            const enemyResistances = {};
+            
+            if (!enhancedPal.statusEffects) enhancedPal.statusEffects = [];
+            if (!enemy.statusEffects) enemy.statusEffects = [];
+
+            let turn = 0;
+            let reviveUsed = false;
+            let invulnerabilityTurns = 0;
+            let paradoxActive = false;
+            let paradoxStoredDamage = 0;
+
+            this.logger.clear();
+            
+            while (palCurrentHp > 0 && enemyCurrentHp > 0 && turn < COMBAT_CONFIG.MAX_TURNS) {
+                turn++;
+                this.logger.add(`\n\n**--- Turn ${turn} ---**`);
+
+                // Process status effects
+                const palStatusResult = StatusEffectManager.processStatusEffects(
+                    { ...enhancedPal, currentHp: palCurrentHp, maxHp: enhancedPal.stats.hp },
+                    []
+                );
+                palCurrentHp = palStatusResult.creature.currentHp;
+                enhancedPal.statusEffects = palStatusResult.creature.statusEffects;
+                this.logger.addMultiple(palStatusResult.battleLog);
+
+                const enemyStatusResult = StatusEffectManager.processStatusEffects(
+                    { ...enemy, currentHp: enemyCurrentHp, maxHp: enemy.stats.hp },
+                    []
+                );
+                enemyCurrentHp = enemyStatusResult.creature.currentHp;
+                enemy.statusEffects = enemyStatusResult.creature.statusEffects;
+                this.logger.addMultiple(enemyStatusResult.battleLog);
+
+                if (invulnerabilityTurns > 0) invulnerabilityTurns--;
+
+                // Handle paradox loop recoil damage from previous turn
+                if (paradoxActive && paradoxStoredDamage > 0) {
+                    this.logger.add(`⏰ **Temporal Recoil!** ${pal.nickname || pal.name} takes ${paradoxStoredDamage} delayed damage!`);
+                    palCurrentHp = Math.max(0, palCurrentHp - paradoxStoredDamage);
+                    paradoxStoredDamage = 0;
+                    paradoxActive = false;
+                    
+                    if (palCurrentHp <= 0) {
+                        this.logger.add(`💀 Your **${pal.nickname || pal.name}** has been defeated by temporal paradox!`);
+                        break;
+                    }
+                }
+
+                const palCanAct = palStatusResult.canAct !== false;
+                const enemyCanAct = enemyStatusResult.canAct !== false;
+
+                // Pal's turn
+                if (palCanAct && enemyCurrentHp > 0) {
+                    const attackResult = this.executeAttack(
+                        enhancedPal, enemy, palType, enemyType, 
+                        equipmentEffects, potionEffects, enemyResistances,
+                        pal.nickname || pal.name, enemy.name
+                    );
+                    
+                    enemyCurrentHp = Math.max(0, enemyCurrentHp - attackResult.damage);
+                    
+                    // Handle Abyssal Devourer fear application
+                    if (attackResult.applyFear) {
+                        StatusEffectManager.applyStatusEffect(enemy, 'fear');
+                        this.logger.add(`😱 **${enemy.name}** is struck with primal terror!`);
+                    }
+                    
+                    if (attackResult.lifesteal > 0) {
+                        palCurrentHp = Math.min(enhancedPal.stats.hp, palCurrentHp + attackResult.lifesteal);
+                    }
+
+                    if (enemyCurrentHp <= 0) {
+                        this.logger.add(`💀 The **${enemy.name}** has been defeated!`);
+                        break;
+                    }
+                    this.logger.add(`> *${enemy.name} HP: ${enemyCurrentHp}/${enemy.stats.hp}*`);
+                }
+
+                // Enemy's turn
+                if (enemyCanAct && enemyCurrentHp > 0 && palCurrentHp > 0) {
+                    // Check for paradox loop activation
+                    const paradoxCheck = SkillManager.checkActivation(enhancedPal, "paradox_loop");
+                    if (paradoxCheck?.type === "paradox_loop") {
+                        this.logger.add(paradoxCheck.message);
+                        paradoxActive = true;
+                    }
+
+                    if (invulnerabilityTurns > 0 || paradoxActive) {
+                        const immunityMessage = paradoxActive ? 
+                            `🔮 **${pal.nickname || pal.name}** exists outside of time - attacks pass through harmlessly!` :
+                            `🛡️ **${pal.nickname || pal.name}** is invulnerable to damage!`;
+                        this.logger.add(immunityMessage);
+                        
+                        // Store damage for paradox recoil
+                        if (paradoxActive) {
+                            const wouldBeDamage = DamageCalculator.calculate(
+                                enemy.stats, enhancedPal.stats, enemyType, palType, palResistances
+                            ).damage;
+                            paradoxStoredDamage = Math.floor(wouldBeDamage * (paradoxCheck.recoilPercent || 0.5));
+                            this.logger.add(`⏰ *Storing ${paradoxStoredDamage} temporal damage...*`);
+                        }
+                    } else {
+                        const enemyAttackResult = this.executeEnemyAttack(
+                            enemy, enhancedPal, enemyType, palType,
+                            palResistances, enemy.name, pal.nickname || pal.name
+                        );
+                        
+                        palCurrentHp = Math.max(0, palCurrentHp - enemyAttackResult.damage);
+
+                        if (palCurrentHp <= 0) {
+                            if (this.handleDeath(enhancedPal, equipmentEffects, reviveUsed)) {
+                                const reviveHp = Math.floor(enhancedPal.stats.hp * 0.3);
+                                palCurrentHp = reviveHp;
+                                reviveUsed = true;
+                                this.logger.add(`🌟 **Revival!** ${pal.nickname || pal.name} refuses to stay down!`);
+                            } else {
+                                this.logger.add(`💀 Your **${pal.nickname || pal.name}** has been defeated!`);
+                                break;
+                            }
+                        }
+                        this.logger.add(`> *${pal.nickname || pal.name} HP: ${palCurrentHp}/${enhancedPal.stats.hp}*`);
+                    }
+                }
+
+                // Apply healing effects
+                palCurrentHp = this.applyHealingEffects(enhancedPal, palCurrentHp, pal.nickname || pal.name);
+            }
+
+            if (turn >= COMBAT_CONFIG.MAX_TURNS) {
+                this.logger.add("⏱️ The battle lasted too long and both combatants retreat");
+            }
+
+            return {
+                playerWon: palCurrentHp > 0,
+                log: this.logger.getLog(),
+                remainingHp: Math.max(0, palCurrentHp),
+            };
+        } catch (error) {
+            console.error('Error in combat simulation:', error);
+            return {
+                playerWon: false,
+                log: "An error occurred during battle simulation.",
+                remainingHp: 0,
+            };
+        }
+    }
+
+    executeAttack(attacker, defender, attackerType, defenderType, equipmentEffects, 
+             potionEffects, defenderResistances, attackerName, defenderName, 
+             defenderEquipmentEffects = null) {  // Add this parameter
+        let totalDamage = 0;
+        let lifesteal = 0;
+        let applyFear = false;
+        let elementalStormTriggered = false;
+        let abyssalDevourerTriggered = false;
+
+        try {
+            // Check for defensive skills BEFORE hit calculation
+            const divineProtection = SkillManager.checkActivation(defender, "divine_protection");
+            if (divineProtection?.type === "divine_protection") {
+                this.logger.add(divineProtection.message);
+                this.logger.add(`> The attack is completely negated!`);
+                return { damage: 0, lifesteal: 0, applyFear: false };
+            }
+
+            const dodgeSkill = SkillManager.checkActivation(defender, "dodge");
+            if (dodgeSkill?.type === "dodge") {
+                this.logger.add(dodgeSkill.message);
+                
+                // Check for counter-attack
+                const counterSkill = SkillManager.checkActivation(defender, "counter");
+                if (counterSkill?.type === "counter") {
+                    this.logger.add(counterSkill.message);
+                    this.logger.add(`⚔️ Counter-attack deals **${counterSkill.damage}** damage!`);
+                    // Note: Counter damage should be applied by caller
+                }
+                return { damage: 0, lifesteal: 0, applyFear: false, counterDamage: counterSkill?.damage || 0 };
+            }
+
+            const hitResult = HitCalculator.compute(attacker.stats, defender.stats, attacker.equipment, defender.equipment);
+        
+        if (Math.random() > hitResult.hitChance) {
+            this.logger.add(`💨 **${attackerName}**'s attack misses!`);
+            return { 
+                damage: 0, 
+                lifesteal: 0, 
+                applyFear: false,
+                counterDamage: 0,
+                elementalStormTriggered: false,
+                abyssalDevourerTriggered: false
+            };
+        }
+
+            // Get all skill activations
+            const skillActivations = this.checkSkillActivations(attacker, attackerName);
+            let damageMultiplier = skillActivations.multiplier;
+            let attackCount = skillActivations.attackCount;
+            applyFear = skillActivations.applyFear;
+
+            elementalStormTriggered = skillActivations.elementalStormTriggered || false;
+            abyssalDevourerTriggered = skillActivations.abyssalDevourerTriggered || false;
+
+            if (skillActivations.enhancedLifesteal) {
+                attacker.skillBonuses.lifesteal = Math.max(
+                    attacker.skillBonuses.lifesteal || 0,
+                    skillActivations.enhancedLifesteal
+                );
+            }
+
+            // Execute each attack
+            for (let attackNum = 0; attackNum < attackCount; attackNum++) {
+                let attack = DamageCalculator.calculate(
+                    attacker.stats, defender.stats, attackerType, defenderType, defenderResistances
+                );
+
+                attack.damage = Math.floor(attack.damage * damageMultiplier);
+
+                const weaponResult = WeaponAbilityProcessor.process(
+                    attacker.stats, equipmentEffects, attackerName, this.logger
+                );
+                attack.damage += weaponResult.damage;
+
+                const offensiveResult = EquipmentEffectProcessor.processOffensive(
+                    attacker, equipmentEffects, attackerName, this.logger
+                );
+                attack.damage = Math.floor(attack.damage * offensiveResult.damageModifier);
+
+                attack.damage = this.applyPotionEffects(attack.damage, potionEffects, attackerName);
+
+                // Check for Elemental Shield on defender
+                const elementalShield = SkillManager.checkActivation(defender, "elemental_shield");
+                if (elementalShield?.type === "elemental_shield") {
+                    this.logger.add(elementalShield.message);
+                    const absorbedDamage = Math.floor(attack.damage * elementalShield.absorb);
+                    attack.damage -= absorbedDamage;
+                    this.logger.add(`🛡️ **Shield absorbs ${absorbedDamage} damage!**`);
+                    
+                    const reflectDamage = Math.floor(absorbedDamage * elementalShield.reflection);
+                    if (reflectDamage > 0) {
+                        this.logger.add(`⚡ **Shield reflects ${reflectDamage} damage back!**`);
+                        // Note: Reflected damage should be applied by caller
+                        return { damage: attack.damage, lifesteal: 0, applyFear: false, counterDamage: reflectDamage || 0 };
+                    }
+                }
+
+                // Apply damage reduction from skills
+                if (defender.skillBonuses?.damageReduction) {
+                    const originalDamage = attack.damage;
+                    attack.damage = Math.floor(attack.damage * (1 - defender.skillBonuses.damageReduction));
+                    if (originalDamage !== attack.damage) {
+                        this.logger.add(`🛡️ **Damage Reduction** reduces damage by ${originalDamage - attack.damage}!`);
+                    }
+                }
+
+                // Process defensive equipment effects
+                if (defenderEquipmentEffects) {
+                    const defensiveResult = EquipmentEffectProcessor.processDefensive(
+                        defender, defenderEquipmentEffects, defenderName, attack.damage, this.logger
+                    );
+                    
+                    attack.damage = Math.max(0, attack.damage - defensiveResult.damageReduction);
+                    
+                    // Apply counter status effects to attacker
+                    defensiveResult.statusEffects.forEach(status => {
+                        StatusEffectManager.applyStatusEffect(attacker, status);
+                        const statusIcon = StatusProcessor.getStatusIcon(status);
+                        this.logger.add(`${statusIcon} **${attackerName}** is afflicted with ${status}!`);
+                    });
+                }
+
+                totalDamage += attack.damage;
+                this.logAttack(attackerName, attack, attackerType, defenderType, attackNum === 0 || attackCount === 1);
+
+                // Check for temporal echo
+                const temporalEcho = SkillManager.checkActivation(attacker, "temporal_echo");
+                if (temporalEcho?.type === "temporal_echo") {
+                    this.logger.add(temporalEcho.message);
+                    const echoDamage = Math.floor(attack.damage * temporalEcho.multiplier);
+                    totalDamage += echoDamage;
+                    this.logger.add(`⏰ **Echo Strike** deals **${echoDamage}** additional damage!`);
+                }
+            }
+
+            // Apply lifesteal
+            if (attacker.skillBonuses?.lifesteal) {
+                lifesteal = Math.floor(totalDamage * attacker.skillBonuses.lifesteal);
+                this.logger.add(`💉 **Life Drain!** ${attackerName} recovers ${lifesteal} HP!`);
+            }
+
+            // Process status effect infliction
+            StatusProcessor.inflictStatus(attacker, defender, attackerName, this.logger);
+
+        } catch (error) {
+            console.error('Error executing attack:', error);
+        }
+
+        return { damage: totalDamage, lifesteal, applyFear, counterDamage: 0, elementalStormTriggered, abyssalDevourerTriggered };
+    }
+
+    executeEnemyAttack(enemy, defender, attackerType, defenderType, defenderResistances, attackerName, defenderName) {
+        try {
+            const divineProtection = SkillManager.checkActivation(defender, "divine_protection");
+            const dodgeSkill = SkillManager.checkActivation(defender, "dodge");
+
+            if (divineProtection?.type === "divine_protection") {
+                this.logger.add(divineProtection.message);
+                this.logger.add(`> The attack is completely negated!`);
+                return { damage: 0 };
+            }
+
+            if (dodgeSkill?.type === "dodge") {
+                this.logger.add(dodgeSkill.message);
+                this.logger.add(`> The attack is dodged!`);
+                
+                const counterSkill = SkillManager.checkActivation(defender, "counter");
+                if (counterSkill?.type === "counter") {
+                    this.logger.add(counterSkill.message);
+                    this.logger.add(`⚔️ Counter-attack deals **${counterSkill.damage}** damage!`);
+                }
+                return { damage: 0 };
+            }
+
+            let attack = DamageCalculator.calculate(
+                enemy.stats, defender.stats, attackerType, defenderType, defenderResistances
+            );
+            
+            // Check for elemental shield on defender
+            const elementalShield = SkillManager.checkActivation(defender, "elemental_shield");
+            if (elementalShield?.type === "elemental_shield") {
+                this.logger.add(elementalShield.message);
+                
+                const absorbedDamage = Math.floor(attack.damage * elementalShield.absorb);
+                attack.damage -= absorbedDamage;
+                this.logger.add(`🛡️ **Shield absorbs ${absorbedDamage} damage!**`);
+                
+                const reflectDamage = Math.floor(absorbedDamage * elementalShield.reflection);
+                if (reflectDamage > 0) {
+                    this.logger.add(`⚡ **Shield reflects ${reflectDamage} damage back to ${attackerName}!**`);
+                }
+            }
+
+            // Apply damage reduction
+            if (defender.skillBonuses?.damageReduction) {
+                const originalDamage = attack.damage;
+                attack.damage = Math.floor(attack.damage * (1 - defender.skillBonuses.damageReduction));
+                if (originalDamage !== attack.damage) {
+                    this.logger.add(`🛡️ **Armor Plating** reduces damage by ${originalDamage - attack.damage}!`);
+                }
+            }
+
+            // Apply Abyssal defense reduction
+            if (enemy.skillBonuses?.defReduction) {
+                const originalDamage = attack.damage;
+                attack.damage = Math.floor(attack.damage * (1 + enemy.skillBonuses.defReduction));
+                this.logger.add(`😱 **Terror From Below** amplifies damage by ${attack.damage - originalDamage}!`);
+            }
+
+            this.logEnemyAttack(attackerName, attack, attackerType, defenderType);
+
+            return { damage: attack.damage };
+        } catch (error) {
+            console.error('Error executing enemy attack:', error);
+            return { damage: 1 };
+        }
+    }
+
+    checkSkillActivations(attacker, attackerName) {
+        let multiplier = 1;
+        let attackCount = 1;
+        let applyFear = false;
+        let enhancedLifesteal = null;
+        let elementalStormTriggered = false;
+        let abyssalDevourerTriggered = false;
+
+        try {
+            // Check if silenced
+            const silenced = attacker.statusEffects?.some(e => 
+                e.type === 'silence' && e.turnsRemaining > 0
+            );
+            
+            if (silenced) {
+                this.logger.add(`🤫 **${attackerName}** is silenced and cannot use skills!`);
+                return { multiplier, attackCount, applyFear, enhancedLifesteal, elementalStormTriggered, abyssalDevourerTriggered };
+            }
+
+            const executeSkill = SkillManager.checkActivation(attacker, "execute");
+            const overloadSkill = SkillManager.checkActivation(attacker, "overload");
+            const multiAttack = SkillManager.checkActivation(attacker, "multiAttack");
+            const darkRitual = SkillManager.checkActivation(attacker, "dark_ritual");
+            const elementalStorm = SkillManager.checkActivation(attacker, "elemental_storm");
+            const abyssalDevourer = SkillManager.checkActivation(attacker, "abyssal_devourer");
+
+            if (elementalStorm?.type === "elemental_storm") {
+                multiplier *= elementalStorm.multiplier;
+                elementalStormTriggered = true;
+                this.logger.add(elementalStorm.message);
+            }
+
+            if (executeSkill?.type === "execute") {
+                multiplier *= executeSkill.multiplier;
+                this.logger.add(executeSkill.message);
+            }
+
+            if (overloadSkill?.type === "overload") {
+                multiplier *= overloadSkill.multiplier;
+                this.logger.add(overloadSkill.message);
+            }
+
+            if (multiAttack?.type === "multiAttack") {
+                attackCount = 2;
+                this.logger.add(multiAttack.message);
+            }
+
+            if (darkRitual?.type === "dark_ritual") {
+                multiplier *= darkRitual.multiplier;
+                this.logger.add(darkRitual.message);
+            }
+
+            // NEW: Abyssal Devourer
+            if (abyssalDevourer?.type === "abyssal_devourer") {
+                multiplier *= abyssalDevourer.multiplier;
+                applyFear = abyssalDevourer.instantFear;
+                enhancedLifesteal = abyssalDevourer.lifesteal;
+                abyssalDevourerTriggered = true;
+                this.logger.add(abyssalDevourer.message);
+            }
+        } catch (error) {
+            console.error('Error checking skill activations:', error);
+        }
+
+        return { multiplier, attackCount, applyFear, enhancedLifesteal, elementalStormTriggered, abyssalDevourerTriggered };
+    }
+
+    applyPotionEffects(damage, potionEffects, attackerName) {
+        try {
+            if (potionEffects.special?.ability === "shadow_strike" && 
+                Math.random() < (potionEffects.special.chance || 0.25)) {
+                damage *= 2;
+                this.logger.add(`🌑 **Shadow Strike!** ${attackerName} attacks from the shadows!`);
+            }
+        } catch (error) {
+            console.error('Error applying potion effects:', error);
+        }
+        return Math.floor(damage);
+    }
+
+    handleDeath(creature, equipmentEffects, reviveUsed) {
+        try {
+            if (creature.skillBonuses?.deathResistance && 
+                Math.random() < creature.skillBonuses.deathResistance) {
+                return true;
+            }
+
+            if (!reviveUsed && equipmentEffects.revive_once) {
+                return true;
+            }
+
+            if (!reviveUsed && creature.skillBonuses?.reviveChance && 
+                Math.random() < creature.skillBonuses.reviveChance) {
+                return true;
+            }
+        } catch (error) {
+            console.error('Error handling death:', error);
+        }
+        return false;
+    }
+
+    applyHealingEffects(creature, currentHp, creatureName) {
+        let newHp = currentHp;
+        
+        try {
+            if (creature.skillBonuses?.hpRegen) {
+                const healing = Math.floor(creature.stats.hp * creature.skillBonuses.hpRegen);
+                if (healing > 0) {
+                    newHp = Math.min(creature.stats.hp, newHp + healing);
+                    this.logger.add(`💚 **Regeneration:** ${creatureName} recovers ${healing} HP!`);
+                }
+            }
+
+            if (creature.skillBonuses?.selfRepair) {
+                const repairAmount = Math.floor(creature.stats.hp * creature.skillBonuses.selfRepair);
+                if (repairAmount > 0) {
+                    newHp = Math.min(creature.stats.hp, newHp + repairAmount);
+                    this.logger.add(`🔧 **Self Repair:** ${creatureName} repairs ${repairAmount} HP!`);
+                }
+            }
+        } catch (error) {
+            console.error('Error applying healing effects:', error);
+        }
+        
+        return newHp; 
+    }
+
+    logAttack(attackerName, attack, attackerType, defenderType, showDetails = true) {
+        let message = `⚔️ **${attackerName}** attacks for **${attack.damage}** damage!`;
+        
+        if (showDetails) {
+            if (attack.typeMultiplier > 1) {
+                message += ` ✨ **Super effective!** (${attackerType} vs ${defenderType})`;
+            } else if (attack.typeMultiplier < 1) {
+                message += ` 🛡️ *Not very effective...* (${attackerType} vs ${defenderType})`;
+            }
+            if (attack.isCrit) {
+                message += ` 💥 **Critical hit!**`;
+            }
+            if (attack.resistanceApplied) {
+                message += ` 🛡️ *Damage reduced by resistance!*`;
+            }
+        }
+        
+        this.logger.add(message);
+    }
+
+    logEnemyAttack(attackerName, attack, attackerType, defenderType) {
+        let message = `⚔️ The **${attackerName}** retaliates for **${attack.damage}** damage!`;
+        
+        if (attack.typeMultiplier > 1) {
+            message += ` ✨ **Super effective!**`;
+        } else if (attack.typeMultiplier < 1) {
+            message += ` 🛡️ *Not very effective...*`;
+        }
+        if (attack.isCrit) {
+            message += ` 💥 **Critical hit!**`;
+        }
+        
+        this.logger.add(message);
+    }
+}
+
+// Export all functions and classes for backward compatibility and new usage
+module.exports = {
+    // Legacy function exports
+    generateEnemy: Utils.safeGenerateEnemy,
+    generateDungeonRewards: Utils.safeGenerateDungeonRewards,
+    getTypeAdvantage: TypeAdvantage.calculate,
+    getEquipmentResistances: EquipmentManager.getResistances,
+    getEquipmentEffects: EquipmentManager.getEffects,
+    getEquipmentAccuracyMultiplier: (equipment) => EquipmentManager.getMultiplier(equipment, 'accuracy'),
+    getEquipmentEvasionMultiplier: (equipment) => EquipmentManager.getMultiplier(equipment, 'evasion'),
+    computeHitChance: HitCalculator.compute,
+    calculateDamage: DamageCalculator.calculate,
+    calculateTurnOrder: TurnOrderManager.calculate,
+    applyPackLeaderBonus: PackLeaderManager.apply,
+    ensureSkillTree: SkillManager.ensureSkillTree,
+    applySkillBonuses: SkillManager.applySkillBonuses,
+    checkSkillActivation: SkillManager.checkActivation,
+    processWeaponAbilities: WeaponAbilityProcessor.process,
+    processStatusInfliction: StatusProcessor.inflictStatus,
+    checkStatusImmunity: StatusProcessor.checkImmunity,
+    processDefensiveEquipmentEffects: EquipmentEffectProcessor.processDefensive,
+    processOffensiveEquipmentEffects: EquipmentEffectProcessor.processOffensive,
+    processEquipmentEffects: EquipmentEffectProcessor.processOffensive,
+    
+    // New class exports
+    CombatEngine,
+    StatManager,
+    EquipmentManager,
+    TypeAdvantage,
+    SkillManager,
+    HitCalculator,
+    DamageCalculator,
+    TurnOrderManager,
+    PackLeaderManager,
+    WeaponAbilityProcessor,
+    StatusProcessor,
+    EquipmentEffectProcessor,
+    CombatLogger,
+    Utils,
+    
+    // Configuration
+    COMBAT_CONFIG
+};

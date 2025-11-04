@@ -1,0 +1,1080 @@
+const {
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ComponentType,
+    StringSelectMenuBuilder,
+} = require("discord.js");
+const Player = require("../../models/Player");
+const Pet = require("../../models/Pet");
+const {
+    createErrorEmbed,
+    createSuccessEmbed,
+    createWarningEmbed,
+    createCustomEmbed,
+    createInfoEmbed,
+} = require("../../utils/embed");
+const allPals = require("../../gamedata/pets");
+const allDungeons = require("../../gamedata/dungeons");
+const allItems = require("../../gamedata/items");
+const {
+    CombatEngine,
+    SkillManager,
+    EquipmentManager,
+    Utils,
+    StatManager
+} = require("../../utils/combat2");
+const { grantPalXp } = require("../../utils/leveling");
+const { restorePetHp } = require("../../utils/stamina");
+
+/**
+ * Dungeon Session Manager - handles active sessions
+ */
+class DungeonSessionManager {
+    constructor() {
+        this.activeSessions = new Map();
+    }
+
+    create(userId) {
+        const sessionId = `${userId}_${Date.now()}`;
+        this.activeSessions.set(userId, sessionId);
+        return sessionId;
+    }
+
+    isValid(userId, sessionId) {
+        return this.activeSessions.get(userId) === sessionId;
+    }
+
+    cleanup(userId) {
+        this.activeSessions.delete(userId);
+    }
+
+    hasActive(userId) {
+        return this.activeSessions.has(userId);
+    }
+}
+
+/**
+ * Dungeon Manager - handles dungeon logic
+ */
+class DungeonManager {
+    static async getDungeonForPlayer(player, args, prefix) {
+        let dungeonId;
+        let dungeon;
+
+        if (args[0]?.toLowerCase() === "quick") {
+            if (!player.preferences?.selectedDungeon) {
+                throw new Error(`NO_DUNGEON_SELECTED:You haven't selected a preferred dungeon yet! Use \`${prefix}select dungeon\` to choose one.`);
+            }
+            dungeonId = player.preferences.selectedDungeon;
+            dungeon = allDungeons[dungeonId];
+        } else if (args.length > 0) {
+            dungeonId = args.join("_").toLowerCase();
+            dungeon = allDungeons[dungeonId];
+        } else {
+            if (player.preferences?.selectedDungeon) {
+                dungeonId = player.preferences.selectedDungeon;
+                dungeon = allDungeons[dungeonId];
+            } else {
+                throw new Error(`NO_DUNGEON_SPECIFIED:Please specify a dungeon name or use \`${prefix}select dungeon\` to set a preferred dungeon, then use \`${prefix}dungeon quick\`.`);
+            }
+        }
+
+        if (!dungeon) {
+            throw new Error(`DUNGEON_NOT_FOUND:That dungeon does not exist. Use \`${prefix}alldungeons\` to see available locations.`);
+        }
+
+        return { dungeonId, dungeon };
+    }
+
+    static async getEligiblePals(userId, levelRequirement) {
+        return await Pet.find({
+            ownerId: userId,
+            status: "Idle",
+            level: { $gte: levelRequirement },
+        });
+    }
+
+    static async selectPreferredPal(player, availablePals) {
+        if (!player.preferences?.selectedPet) return null;
+
+        return availablePals.find(pal => 
+            pal.petId === player.preferences.selectedPet
+        );
+    }
+
+    static async restoreInjuredPets(userId) {
+        const allPets = await Pet.find({ ownerId: userId });
+        for (const pet of allPets) {
+            if (pet.status === "Injured") {
+                await restorePetHp(pet);
+            }
+        }
+    }
+}
+
+/**
+ * Potion Manager - handles potion selection and effects
+ */
+class PotionManager {
+    static getAvailablePotions(player) {
+        return player.inventory.filter((item) => {
+            const itemData = allItems[item.itemId];
+            return itemData && itemData.type === "potion" && item.quantity > 0;
+        });
+    }
+
+    static async consumePotion(userId, potionId) {
+        if (potionId === "none") return null;
+
+        const player = await Player.findOne({ userId });
+        const potionItem = player.inventory.find(item => item.itemId === potionId);
+        
+        if (!potionItem) return null;
+
+        potionItem.quantity -= 1;
+        if (potionItem.quantity <= 0) {
+            player.inventory = player.inventory.filter(item => item.itemId !== potionId);
+        }
+        await player.save();
+
+        return allItems[potionId];
+    }
+
+    static applyPotionEffects(pal, potion) {
+        if (!potion) return StatManager.cloneCreature(pal);
+
+        try {
+            const enhancedPal = StatManager.cloneCreature(pal);
+            const effect = potion.effect;
+
+            if (!effect) return enhancedPal;
+
+            switch (effect.type) {
+                case "heal":
+                    enhancedPal.stats.hp += effect.value;
+                    break;
+                    
+                case "stat_boost":
+                    if (enhancedPal.stats[effect.stat] !== undefined) {
+                        enhancedPal.stats[effect.stat] += effect.value;
+                    }
+                    break;
+                    
+                case "multi_boost":
+                    Object.entries(effect.stats || {}).forEach(([stat, value]) => {
+                        if (enhancedPal.stats[stat] !== undefined) {
+                            enhancedPal.stats[stat] += value;
+                        }
+                    });
+                    break;
+                    
+                case "trade_boost":
+                    // Apply gains
+                    Object.entries(effect.gain || {}).forEach(([stat, value]) => {
+                        if (enhancedPal.stats[stat] !== undefined) {
+                            enhancedPal.stats[stat] += value;
+                        }
+                    });
+                    // Apply losses
+                    Object.entries(effect.lose || {}).forEach(([stat, value]) => {
+                        if (enhancedPal.stats[stat] !== undefined) {
+                            enhancedPal.stats[stat] -= value;
+                        }
+                    });
+                    break;
+                    
+                case "resistance":
+                    if (!enhancedPal.resistances) enhancedPal.resistances = {};
+                    enhancedPal.resistances[effect.element] = 
+                        (enhancedPal.resistances[effect.element] || 0) + effect.value;
+                    break;
+                    
+                case "familiar_type_boost":
+                    const palData = allPals[pal.basePetId];
+                    const palType = palData?.type || "Beast";
+                    if (palType.toLowerCase() === effect.target.toLowerCase()) {
+                        Object.entries(effect.stats || {}).forEach(([stat, value]) => {
+                            if (enhancedPal.stats[stat] !== undefined) {
+                                enhancedPal.stats[stat] += value;
+                            }
+                        });
+                    }
+                    break;
+                    
+                case "special":
+                    // Special abilities handled in getPotionEffects
+                    // But apply bonus stats here
+                    if (effect.bonus_luck) {
+                        enhancedPal.stats.luck = (enhancedPal.stats.luck || 0) + effect.bonus_luck;
+                    }
+                    if (effect.crit_bonus) {
+                        enhancedPal.stats.luck = (enhancedPal.stats.luck || 0) + effect.crit_bonus;
+                    }
+                    break;
+            }
+
+            // Ensure stats remain valid
+            enhancedPal.stats = StatManager.validateStats(enhancedPal.stats);
+            return enhancedPal;
+        } catch (error) {
+            console.error("Error applying potion effects:", error);
+            return StatManager.cloneCreature(pal);
+        }
+    }
+
+    static getPotionEffects(potion) {
+        if (!potion?.effect) return {};
+
+        const effects = {};
+        const effect = potion.effect;
+
+        if (effect.type === "special") {
+            effects.special = {
+                ability: effect.ability,
+                chance: effect.chance || 0.25,
+                duration: effect.duration,
+            };
+        }
+
+        return effects;
+    }
+}
+
+/**
+ * Reward Manager - handles dungeon rewards
+ */
+class RewardManager {
+    static initializeRewards() {
+        return { gold: 0, xp: 0, loot: [], egg: [] };
+    }
+
+    static addFloorRewards(sessionRewards, floorRewards) {
+        sessionRewards.gold += floorRewards.gold1;
+        sessionRewards.xp += floorRewards.xp1;
+
+        // Add loot
+        floorRewards.loot.forEach((newItem) => {
+            const existingItem = sessionRewards.loot.find(
+                (item) => item.itemId === newItem.itemId,
+            );
+            if (existingItem) {
+                existingItem.quantity += newItem.quantity;
+            } else {
+                sessionRewards.loot.push({ ...newItem });
+            }
+        });
+
+        // Add eggs
+        if (floorRewards.egg) {
+            const existingEgg = sessionRewards.egg.find(
+                (item) => item.itemId === floorRewards.egg.itemId,
+            );
+            if (existingEgg) {
+                existingEgg.quantity += 1;
+            } else {
+                sessionRewards.egg.push({
+                    itemId: floorRewards.egg.itemId,
+                    quantity: 1,
+                });
+            }
+        }
+    }
+
+    static formatRewardString(floorRewards) {
+        let rewardString = `**+${floorRewards.gold1}** Gold\n**+${floorRewards.xp1}** XP`;
+        
+        floorRewards.loot.forEach((item) => {
+            rewardString += `\n**+${item.quantity}x** ${allItems[item.itemId].name}`;
+        });
+        
+        if (floorRewards.egg) {
+            rewardString += `\n**+1x** ${allItems[floorRewards.egg.itemId].name}!`;
+        }
+
+        return rewardString;
+    }
+
+    static async finalizeRewards(userId, rewards, floorsCleared, dungeon, wasDefeated) {
+        let updateSuccess = false;
+        let retries = 3;
+
+        while (!updateSuccess && retries > 0) {
+            try {
+                const currentPlayer = await Player.findOne({ userId });
+
+                // Update gold
+                currentPlayer.gold += rewards.gold;
+
+                // Update dungeon clears
+                if (!wasDefeated && floorsCleared === dungeon.floors) {
+                    currentPlayer.stats.dungeonClears += 1;
+                }
+
+                // Update inventory
+                [...rewards.loot, ...rewards.egg].forEach((item) => {
+                    const existing = currentPlayer.inventory.find((i) => i.itemId === item.itemId);
+                    if (existing) {
+                        existing.quantity += item.quantity;
+                    } else {
+                        currentPlayer.inventory.push({ ...item });
+                    }
+                });
+
+                await currentPlayer.save();
+                updateSuccess = true;
+            } catch (error) {
+                if (error.name === 'VersionError' && retries > 0) {
+                    retries--;
+                    await new Promise(resolve => setTimeout(resolve, 100 * (4 - retries)));
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        return updateSuccess;
+    }
+
+    static formatFinalSummary(rewards, floorsCleared, levelUpInfo, pal) {
+        let finalSummary = 
+            `**Floors Cleared:** ${floorsCleared}\n` +
+            `**Gold Earned:** ${rewards.gold}\n` +
+            `**XP Gained:** ${rewards.xp}`;
+
+        if (rewards.loot.length > 0 || rewards.egg.length > 0) {
+            finalSummary += `\n\n**Items Obtained:**`;
+
+            rewards.loot.forEach((item) => {
+                const itemData = allItems[item.itemId];
+                finalSummary += `\n• **${item.quantity}x** ${itemData.name}`;
+            });
+
+            if (rewards.egg.length > 0) {
+                rewards.egg.forEach((eggItem) => {
+                    const eggData = allItems[eggItem.itemId];
+                    finalSummary += `\n• **${eggItem.quantity}x** ${eggData.name} 🥚`;
+                });
+            }
+        } else {
+            finalSummary += `\n\n**Items Obtained:** None`;
+        }
+
+        if (levelUpInfo.leveledUp) {
+            finalSummary += `\n\n**LEVEL UP!** Your **${pal.nickname}** is now **Level ${levelUpInfo.newLevel}**!`;
+        }
+
+        if (pal.status === "Injured") {
+            const currentHp = pal.currentHp || 0;
+            const maxHp = pal.stats.hp;
+            const hpToRecover = maxHp - currentHp;
+            const timeToHeal = Math.ceil(hpToRecover / 1) * 1;
+            finalSummary += `\n\n⚠️ Your **${pal.nickname}** is now **Injured** (${currentHp}/${maxHp} HP)`;
+            if (timeToHeal > 0) {
+                finalSummary += `\n🕐 Will fully heal in approximately **${timeToHeal}** minutes`;
+            }
+        }
+
+        return finalSummary;
+    }
+}
+
+/**
+ * UI Manager - handles Discord UI components
+ */
+class UIManager {
+    static createConfirmationComponents(sessionId) {
+        return new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`dungeon_enter_${sessionId}`)
+                .setLabel("Enter Dungeon")
+                .setStyle(ButtonStyle.Success)
+                .setEmoji("▶️"),
+            new ButtonBuilder()
+                .setCustomId(`dungeon_cancel_${sessionId}`)
+                .setLabel("Cancel")
+                .setStyle(ButtonStyle.Danger),
+        );
+    }
+
+    static createPetSelectionMenu(availablePals, page, perPage, sessionId) {
+        const petsSlice = availablePals.slice(page * perPage, page * perPage + perPage);
+        return new StringSelectMenuBuilder()
+            .setCustomId(`select_pal_dungeon_${sessionId}`)
+            .setPlaceholder("Select a Pal for this expedition...")
+            .addOptions(
+                petsSlice.map((pal) => ({
+                    label: `Lvl ${pal.level} ${pal.nickname}`,
+                    description: `HP: ${pal.stats.hp} | ATK: ${pal.stats.atk} | DEF: ${pal.stats.def}`,
+                    value: pal.petId,
+                })),
+            );
+    }
+
+    static createPaginationButtons(page, maxPage, sessionId) {
+        return new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`prev_page_${sessionId}`)
+                .setLabel("Prev")
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(page === 0),
+            new ButtonBuilder()
+                .setCustomId(`next_page_${sessionId}`)
+                .setLabel("Next")
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(page === maxPage),
+        );
+    }
+
+    static createPotionSelectionMenu(availablePotions, sessionId) {
+        const potionOptions = availablePotions.map((item) => ({
+            label: `${allItems[item.itemId].name} (${item.quantity}x)`,
+            description: allItems[item.itemId].description.substring(0, 100),
+            value: item.itemId,
+        }));
+        
+        potionOptions.unshift({
+            label: "No Potion",
+            description: "Enter without potions",
+            value: "none",
+        });
+
+        return new StringSelectMenuBuilder()
+            .setCustomId(`select_potion_dungeon_${sessionId}`)
+            .setPlaceholder("Select a potion to use (optional)...")
+            .addOptions(potionOptions);
+    }
+
+    static createFightButtons(sessionId) {
+        return new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`fight_${sessionId}`)
+                .setLabel("Fight")
+                .setStyle(ButtonStyle.Success)
+                .setEmoji("⚔️"),
+            new ButtonBuilder()
+                .setCustomId(`run_${sessionId}`)
+                .setLabel("Run")
+                .setStyle(ButtonStyle.Danger),
+        );
+    }
+}
+
+// Initialize session manager
+const sessionManager = new DungeonSessionManager();
+
+module.exports = {
+    name: "dungeon2",
+    description: "Embark on an expedition into a dangerous dungeon with one of your Pals.",
+    usage: "[dungeon name] | quick",
+    
+    async execute(message, args, client, prefix) {
+        // Check for active session
+        if (sessionManager.hasActive(message.author.id)) {
+            return message.reply({
+                embeds: [
+                    createWarningEmbed(
+                        "Already in a Dungeon",
+                        "You are already on an expedition! You cannot start another.",
+                    ),
+                ],
+            });
+        }
+
+        try {
+            // Get player
+            const player = await Player.findOne({ userId: message.author.id });
+            if (!player) {
+                return message.reply({
+                    embeds: [
+                        createWarningEmbed(
+                            "No Adventure Started",
+                            `You haven't started your journey yet! Use \`${prefix}start\` to begin.`,
+                        ),
+                    ],
+                });
+            }
+
+            // Get dungeon
+            const { dungeon } = await DungeonManager.getDungeonForPlayer(player, args, prefix);
+
+            // Create session
+            const sessionId = sessionManager.create(message.author.id);
+
+            // Show confirmation
+            const confirmationEmbed = createInfoEmbed(
+                `Enter ${dungeon.name}?`,
+                `**Tier:** ${dungeon.tier} | **Floors:** ${dungeon.floors}\n` +
+                    `**Requires Pal Lvl:** ${dungeon.levelRequirement}\n\nAre you sure you want to begin this expedition?`,
+            );
+
+            const reply = await message.reply({
+                embeds: [confirmationEmbed],
+                components: [UIManager.createConfirmationComponents(sessionId)],
+            });
+
+            // Handle confirmation
+            const confirmationCollector = reply.createMessageComponentCollector({
+                filter: (i) => i.user.id === message.author.id && sessionManager.isValid(i.user.id, sessionId),
+                time: 60000,
+                max: 1,
+                componentType: ComponentType.Button,
+            });
+
+            confirmationCollector.on("collect", async (i) => {
+                try {
+                    if (i.customId === `dungeon_cancel_${sessionId}`) {
+                        sessionManager.cleanup(message.author.id);
+                        return await i.update({
+                            embeds: [
+                                createWarningEmbed(
+                                    "Expedition Cancelled",
+                                    "You decided not to enter the dungeon.",
+                                ),
+                            ],
+                            components: [],
+                        });
+                    }
+
+                    if (i.customId === `dungeon_enter_${sessionId}`) {
+                        await handleDungeonEntry(i, dungeon, client, reply, prefix, sessionId);
+                    }
+                } catch (error) {
+                    console.error("Dungeon confirmation error:", error);
+                    sessionManager.cleanup(message.author.id);
+                    await handleInteractionError(i, "An error occurred during the dungeon expedition.");
+                }
+            });
+
+            confirmationCollector.on("end", (collected) => {
+                if (collected.size === 0) {
+                    sessionManager.cleanup(message.author.id);
+                    reply.edit({
+                        embeds: [
+                            createWarningEmbed(
+                                "Expedition Timeout",
+                                "The dungeon invitation has expired.",
+                            ),
+                        ],
+                        components: [],
+                    }).catch(() => {});
+                }
+            });
+
+        } catch (error) {
+            console.error("Dungeon command error:", error);
+            sessionManager.cleanup(message.author.id);
+            
+            // Parse error message
+            const [errorType, errorMessage] = error.message.split(':');
+            const embedTitle = {
+                'NO_DUNGEON_SELECTED': 'No Dungeon Selected',
+                'NO_DUNGEON_SPECIFIED': 'No Dungeon Specified',
+                'DUNGEON_NOT_FOUND': 'Dungeon Not Found'
+            }[errorType] || 'An Error Occurred';
+
+            const embedMessage = errorMessage || 'There was a problem starting the dungeon.';
+
+            message.reply({
+                embeds: [createWarningEmbed(embedTitle, embedMessage)],
+            });
+        }
+    },
+};
+
+async function handleDungeonEntry(interaction, dungeon, client, reply, prefix, sessionId) {
+    if (!sessionManager.isValid(interaction.user.id, sessionId)) {
+        return;
+    }
+
+    try {
+        // Restore injured pets
+        await DungeonManager.restoreInjuredPets(interaction.user.id);
+
+        // Get available pals
+        const availablePals = await DungeonManager.getEligiblePals(interaction.user.id, dungeon.levelRequirement);
+        
+        if (availablePals.length === 0) {
+            sessionManager.cleanup(interaction.user.id);
+            return interaction.update({
+                embeds: [
+                    createWarningEmbed(
+                        "No Eligible Pals",
+                        `You don't have any idle Pals that meet the level requirement of **${dungeon.levelRequirement}**.`,
+                    ),
+                ],
+                components: [],
+            });
+        }
+
+        // Check for preferred pal
+        const player = await Player.findOne({ userId: interaction.user.id });
+        const selectedPal = await DungeonManager.selectPreferredPal(player, availablePals);
+
+        if (selectedPal) {
+            // Skip selection, go directly to potion phase
+            await SkillManager.ensureSkillTree(selectedPal);
+            await runPotionPhase(interaction, selectedPal, dungeon, reply, client, sessionId);
+        } else {
+            // Show pal selection
+            await showPalSelection(interaction, availablePals, dungeon, reply, client, sessionId);
+        }
+    } catch (error) {
+        console.error("Dungeon entry error:", error);
+        sessionManager.cleanup(interaction.user.id);
+        await handleInteractionError(interaction, "An error occurred during dungeon entry.");
+    }
+}
+
+async function showPalSelection(interaction, availablePals, dungeon, reply, client, sessionId) {
+    let page = 0;
+    const perPage = 25;
+    const maxPage = Math.ceil(availablePals.length / perPage) - 1;
+
+    const buildComponents = (page) => {
+        const rows = [new ActionRowBuilder().addComponents(
+            UIManager.createPetSelectionMenu(availablePals, page, perPage, sessionId)
+        )];
+        
+        if (maxPage > 0) {
+            rows.push(UIManager.createPaginationButtons(page, maxPage, sessionId));
+        }
+        return rows;
+    };
+
+    await interaction.update({
+        embeds: [
+            createInfoEmbed(
+                "Select Your Pal",
+                "Choose a companion to accompany you into the dungeon.",
+            ),
+        ],
+        components: buildComponents(page),
+    });
+
+    const petCollector = reply.createMessageComponentCollector({
+        filter: (x) => x.user.id === interaction.user.id && sessionManager.isValid(x.user.id, sessionId),
+        time: 2 * 60000,
+    });
+
+    petCollector.on("collect", async (sel) => {
+        try {
+            if (sel.customId === `prev_page_${sessionId}`) {
+                page = Math.max(0, page - 1);
+                return sel.update({ components: buildComponents(page) });
+            }
+            if (sel.customId === `next_page_${sessionId}`) {
+                page = Math.min(maxPage, page + 1);
+                return sel.update({ components: buildComponents(page) });
+            }
+            if (sel.customId === `select_pal_dungeon_${sessionId}`) {
+                petCollector.stop();
+                const selectedPal = await Pet.findOne({ petId: sel.values[0] });
+                
+                if (!selectedPal) {
+                    sessionManager.cleanup(interaction.user.id);
+                    return sel.update({
+                        embeds: [createErrorEmbed("Error", "Selected Pal not found.")],
+                        components: []
+                    });
+                }
+
+                await SkillManager.ensureSkillTree(selectedPal);
+                await runPotionPhase(sel, selectedPal, dungeon, reply, client, sessionId);
+            }
+        } catch (error) {
+            console.error("Pet selection error:", error);
+            sessionManager.cleanup(interaction.user.id);
+            await handleInteractionError(sel, "An error occurred during pet selection.");
+        }
+    });
+
+    petCollector.on("end", (collected) => {
+        if (collected.size === 0) {
+            sessionManager.cleanup(interaction.user.id);
+        }
+    });
+}
+
+async function runPotionPhase(interaction, pal, dungeon, reply, client, sessionId) {
+    if (!sessionManager.isValid(interaction.user.id, sessionId)) {
+        return;
+    }
+
+    try {
+        const player = await Player.findOne({ userId: interaction.user.id });
+        const availablePotions = PotionManager.getAvailablePotions(player);
+
+        if (availablePotions.length > 0) {
+            await interaction.update({
+                embeds: [
+                    createInfoEmbed("Select Potion", "Choose a potion to enhance your Pal."),
+                ],
+                components: [new ActionRowBuilder().addComponents(
+                    UIManager.createPotionSelectionMenu(availablePotions, sessionId)
+                )],
+            });
+
+            const potionCollector = reply.createMessageComponentCollector({
+                filter: (i) => i.user.id === interaction.user.id && sessionManager.isValid(i.user.id, sessionId),
+                time: 2 * 60000,
+                componentType: ComponentType.StringSelect,
+            });
+
+            potionCollector.on("collect", async (potionInteraction) => {
+                try {
+                    potionCollector.stop();
+                    const selectedPotionId = potionInteraction.values[0];
+                    const selectedPotion = await PotionManager.consumePotion(interaction.user.id, selectedPotionId);
+                    await runDungeon(potionInteraction, pal, dungeon, client, selectedPotion, sessionId);
+                } catch (error) {
+                    console.error("Potion selection error:", error);
+                    sessionManager.cleanup(interaction.user.id);
+                    await handleInteractionError(potionInteraction, "An error occurred during potion selection.");
+                }
+            });
+
+            potionCollector.on("end", (collected) => {
+                if (collected.size === 0) {
+                    sessionManager.cleanup(interaction.user.id);
+                }
+            });
+        } else {
+            await runDungeon(interaction, pal, dungeon, client, null, sessionId);
+        }
+    } catch (error) {
+        console.error("Potion phase error:", error);
+        sessionManager.cleanup(interaction.user.id);
+        await handleInteractionError(interaction, "An error occurred during potion selection.");
+    }
+}
+
+async function runDungeon(interaction, pal, dungeon, client, selectedPotion = null, sessionId) {
+    if (!sessionManager.isValid(interaction.user.id, sessionId)) {
+        return;
+    }
+
+    try {
+        let currentFloor = 1;
+        const sessionRewards = RewardManager.initializeRewards();
+        const potionEffects = PotionManager.getPotionEffects(selectedPotion);
+        
+        // Get pal type and apply potion effects
+        const palData = allPals[pal.basePetId];
+        const palType = palData?.type || "Beast";
+        const enhancedPal = PotionManager.applyPotionEffects(pal, selectedPotion);
+        let palCurrentHp = enhancedPal.stats.hp;
+
+        // Show potion consumption
+        if (selectedPotion) {
+            const potionEmbed = createSuccessEmbed(
+                "Potion Applied!",
+                `Your **${pal.nickname}** consumed a **${selectedPotion.name}** and feels empowered!`,
+            );
+            await interaction.update({ embeds: [potionEmbed], components: [] });
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+
+        // Set pal status
+        pal.status = "Exploring";
+        await pal.save();
+
+        // Show active skills
+        const skillTree = await SkillManager.ensureSkillTree(pal);
+        if (skillTree && skillTree.unlockedSkills.length > 0) {
+            const skillNames = skillTree.unlockedSkills
+                .map((skill) => `${skill.skillId} (Lvl ${skill.level})`)
+                .join(", ");
+
+            const skillEmbed = createInfoEmbed(
+                "Active Skills",
+                `Your **${pal.nickname}** enters the dungeon with: ${skillNames}`,
+            );
+            await interaction.channel.send({ embeds: [skillEmbed] });
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+
+        // Main dungeon loop
+        while (currentFloor <= dungeon.floors) {
+            if (!sessionManager.isValid(interaction.user.id, sessionId)) {
+                return;
+            }
+
+            const isBossFloor = currentFloor === dungeon.floors;
+            const enemy = Utils.safeGenerateEnemy(dungeon, currentFloor, isBossFloor);
+            const enemyType = enemy.type || "Beast";
+
+            // Show floor info
+            const floorEmbed = createCustomEmbed(
+                `${dungeon.name} - Floor ${currentFloor}`,
+                `A wild **${enemy.name}** (${enemyType}) appears!`,
+                "#E74C3C",
+                {
+                    fields: [
+                        {
+                            name: `${pal.nickname} (Your ${palType} Pal)`,
+                            value: `❤️ HP: ${palCurrentHp}/${enhancedPal.stats.hp}${
+                                skillTree && skillTree.unlockedSkills.length > 0
+                                    ? `\n🎯 Skills: ${skillTree.unlockedSkills.length} active`
+                                    : ""
+                            }`,
+                            inline: true,
+                        },
+                        {
+                            name: `${enemy.name} (Enemy ${enemyType})`,
+                            value: `❤️ HP: ${enemy.stats.hp}/${enemy.stats.hp}\n⚔️ ATK: ${enemy.stats.atk} | 🛡️ DEF: ${enemy.stats.def}`,
+                            inline: true,
+                        },
+                    ],
+                },
+            );
+
+            await interaction.message.edit({
+                embeds: [floorEmbed],
+                components: [UIManager.createFightButtons(sessionId)],
+            });
+
+            // Wait for action
+            const action = await interaction.channel
+                .awaitMessageComponent({
+                    filter: (i) => i.user.id === interaction.user.id && sessionManager.isValid(i.user.id, sessionId),
+                    time: 5 * 60000,
+                    componentType: ComponentType.Button,
+                })
+                .catch(() => null);
+
+            if (!action) {
+                sessionManager.cleanup(interaction.user.id);
+                await interaction.message.edit({
+                    embeds: [
+                        createWarningEmbed(
+                            "Dungeon Timeout",
+                            "The dungeon exploration timed out. You escaped with the rewards you've gathered so far.",
+                        ),
+                    ],
+                    components: [],
+                });
+                return finalizeDungeon(
+                    interaction,
+                    pal,
+                    sessionRewards,
+                    client,
+                    currentFloor - 1,
+                    dungeon,
+                    false,
+                    palCurrentHp,
+                    sessionId,
+                );
+            }
+
+            if (action.customId === `run_${sessionId}`) {
+                await interaction.message.edit({
+                    embeds: [
+                        createWarningEmbed(
+                            "You Fled!",
+                            "You escaped the dungeon with the rewards you've gathered so far.",
+                        ),
+                    ],
+                    components: [],
+                });
+                
+                // Update pal status if injured
+                if (palCurrentHp < enhancedPal.stats.hp) {
+                    pal.status = "Injured";
+                    pal.currentHp = palCurrentHp;
+                    pal.lastInjuryUpdate = new Date();
+                    await pal.save();
+                }
+                
+                return finalizeDungeon(
+                    action,
+                    pal,
+                    sessionRewards,
+                    client,
+                    currentFloor - 1,
+                    dungeon,
+                    false,
+                    palCurrentHp,
+                    sessionId,
+                );
+            }
+
+            if (action.customId === `fight_${sessionId}`) {
+                // Use the new combat engine
+                const combatEngine = new CombatEngine();
+                const equipmentEffects = EquipmentManager.getEffects(enhancedPal.equipment);
+                
+                const battleResult = await combatEngine.simulateDungeonBattle(
+                    enhancedPal,
+                    enemy,
+                    potionEffects,
+                    equipmentEffects,
+                    palCurrentHp,
+                    palType,
+                    enemyType,
+                    skillTree,
+                    'dungeon',
+                    {}
+                );
+                
+                palCurrentHp = battleResult.remainingHp;
+
+                const battleEmbed = createInfoEmbed(
+                    `Battle Log - Floor ${currentFloor}`,
+                    battleResult.log,
+                );
+                await action.update({ embeds: [battleEmbed], components: [] });
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+
+                if (!battleResult.playerWon) {
+                    await interaction.message.edit({
+                        embeds: [
+                            createErrorEmbed(
+                                "Defeated!",
+                                `Your Pal, **${pal.nickname}**, was defeated on Floor ${currentFloor}. You escape with your current loot.`,
+                            ),
+                        ],
+                    });
+                    return finalizeDungeon(
+                        action,
+                        pal,
+                        sessionRewards,
+                        client,
+                        currentFloor - 1,
+                        dungeon,
+                        true,
+                        0,
+                        sessionId,
+                    );
+                }
+
+                // Generate and add floor rewards
+                const floorRewards = Utils.safeGenerateDungeonRewards(dungeon, currentFloor);
+                RewardManager.addFloorRewards(sessionRewards, floorRewards);
+
+                const rewardString = RewardManager.formatRewardString(floorRewards);
+                const rewardEmbed = createSuccessEmbed(
+                    `Floor ${currentFloor} Cleared!`,
+                    rewardString,
+                );
+                await interaction.message.edit({ embeds: [rewardEmbed] });
+                await new Promise((resolve) => setTimeout(resolve, 4000));
+
+                currentFloor++;
+            }
+        }
+
+        // Dungeon completed
+        await interaction.message.edit({
+            embeds: [
+                createSuccessEmbed(
+                    "Dungeon Cleared!",
+                    `You have conquered all ${dungeon.floors} floors of the **${dungeon.name}**!`,
+                ),
+            ],
+        });
+        
+        return finalizeDungeon(
+            interaction,
+            pal,
+            sessionRewards,
+            client,
+            dungeon.floors,
+            dungeon,
+            false,
+            palCurrentHp,
+            sessionId,
+        );
+    } catch (error) {
+        console.error("Dungeon run error:", error);
+        sessionManager.cleanup(interaction.user.id);
+        await handleInteractionError(interaction, "An error occurred during the dungeon expedition.");
+    }
+}
+
+async function finalizeDungeon(
+    interaction,
+    pal,
+    rewards,
+    client,
+    floorsCleared,
+    dungeon,
+    wasDefeated = false,
+    finalHp = null,
+    sessionId,
+) {
+    try {
+        // Clean up session
+        sessionManager.cleanup(interaction.user.id);
+
+        // Update player rewards
+        const updateSuccess = await RewardManager.finalizeRewards(
+            interaction.user.id, 
+            rewards, 
+            floorsCleared, 
+            dungeon, 
+            wasDefeated
+        );
+
+        if (!updateSuccess) {
+            console.error('Failed to update player rewards after multiple retries');
+        }
+
+        // Grant XP and check for level up
+        const levelUpInfo = await grantPalXp(client, interaction.message, pal, rewards.xp);
+
+        // Update pal status based on final HP
+        if (wasDefeated) {
+            pal.status = "Injured";
+            pal.currentHp = 0;
+            pal.lastInjuryUpdate = new Date();
+        } else if (finalHp !== null && finalHp < pal.stats.hp) {
+            pal.status = "Injured";
+            pal.currentHp = finalHp;
+            pal.lastInjuryUpdate = new Date();
+        } else {
+            pal.status = "Idle";
+            pal.currentHp = null;
+        }
+        await pal.save();
+
+        // Generate final summary
+        const finalSummary = RewardManager.formatFinalSummary(rewards, floorsCleared, levelUpInfo, pal);
+        const summaryEmbed = createSuccessEmbed("Expedition Summary", finalSummary);
+        await interaction.channel.send({ embeds: [summaryEmbed] });
+
+        // Emit dungeon clear event if completed
+        if (!wasDefeated && floorsCleared === dungeon.floors) {
+            client.emit("dungeonClear", interaction.user.id);
+        }
+    } catch (error) {
+        console.error("Error in finalizeDungeon:", error);
+        sessionManager.cleanup(interaction.user.id);
+        // Try to send error message if possible
+        try {
+            await interaction.channel.send({
+                embeds: [createErrorEmbed("Error", "An error occurred while finalizing the dungeon results.")]
+            });
+        } catch (sendError) {
+            console.error("Failed to send error message:", sendError);
+        }
+    }
+}
+
+async function handleInteractionError(interaction, message) {
+    try {
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+                embeds: [createErrorEmbed("Error", message)],
+                ephemeral: true,
+            });
+        } else {
+            await interaction.followUp({
+                embeds: [createErrorEmbed("Error", message)],
+                ephemeral: true,
+            });
+        }
+    } catch (error) {
+        console.error("Failed to send error reply:", error);
+    }
+}

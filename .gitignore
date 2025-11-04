@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+vendor/
+.env
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Compiled output
+dist/
+build/
+out/
+*.class
+*.pyc
+__pycache__/
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# OS generated files
+Thumbs.db
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Package files
+*.zip
+*.tar.gz
+*.rar
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Local configuration
+config.local.js
+settings.local.php
