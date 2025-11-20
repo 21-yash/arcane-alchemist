@@ -1,31 +1,15 @@
 const { createArgEmbed, createErrorEmbed, createSuccessEmbed, createWarningEmbed, createInfoEmbed } = require('../../utils/embed');
 const Pet = require('../../models/Pet');
 const Player = require('../../models/Player');
-const allItems = require('../../gamedata/items');
+const GameData = require('../../utils/gameData');
 const { grantPalLevels, calculateXpForNextLevel } = require('../../utils/leveling');
+const CommandHelpers = require('../../utils/commandHelpers');
 
-// Helper function to find item by partial name match
+// Helper function to find item by partial name match (now uses CommandHelpers)
 function findItemByName(inventory, itemName) {
-    const searchName = itemName.toLowerCase().replace(/[_\s-]/g, '');
-    
-    // First, try exact match
-    let item = inventory.find(i => i.itemId === itemName.toLowerCase());
-    if (item) return { item, itemId: itemName.toLowerCase() };
-    
-    // Then try to find by partial name match
-    for (const invItem of inventory) {
-        const itemData = allItems[invItem.itemId];
-        if (!itemData) continue;
-        
-        const cleanItemName = itemData.name.toLowerCase().replace(/[_\s-]/g, '');
-        const cleanItemId = invItem.itemId.replace(/[_\s-]/g, '');
-        
-        if (cleanItemName.includes(searchName) || cleanItemId.includes(searchName)) {
-            return { item: invItem, itemId: invItem.itemId };
-        }
-    }
-    
-    return { item: null, itemId: null };
+    // Create a temporary player object for CommandHelpers
+    const tempPlayer = { inventory };
+    return CommandHelpers.findItemInInventory(tempPlayer, itemName);
 }
 
 // Helper function to format duration
@@ -62,51 +46,39 @@ function addEffectToPlayer(player, effectType, duration, strength, itemName) {
 
 // Helper function to find pal with better error messages
 async function findPal(message, args, player, prefix) {
-    let palQuery = {};
-    let palIdProvided = false;
-    
     // Check if the last argument is a number (pal ID)
     const lastArg = args[args.length - 1];
     const potentialId = parseInt(lastArg);
     
     if (!isNaN(potentialId) && args.length > 1) {
-        palQuery = { ownerId: message.author.id, shortId: potentialId };
-        palIdProvided = true;
+        // Pal ID was provided
+        const petResult = await CommandHelpers.validatePet(message.author.id, potentialId, prefix);
+        if (!petResult.success) {
+            return { error: petResult.embed };
+        }
+        return { pal: petResult.pet, palIdProvided: true };
     } else {
-        // Try to use selected pet
-        if (player.preferencesselectedPet) {
-            palQuery = { ownerId: message.author.id, petId: player.preferences.selectedPet };
+        // No pal ID provided, try to use selected pet
+        if (player.preferences?.selectedPet) {
+            const pet = await Pet.findOne({ ownerId: message.author.id, petId: player.preferences.selectedPet });
+            if (!pet) {
+                return {
+                    error: createWarningEmbed(
+                        'Selected Pal Not Found', 
+                        `Your selected Pal could not be found. Use \`${prefix}selectpet <id>\` to select a different Pal.`
+                    )
+                };
+            }
+            return { pal: pet, palIdProvided: false };
         } else {
             return {
                 error: createWarningEmbed(
                     'No Pal Specified', 
-                    `You must either:\n• Provide a Pal ID at the end: \`${prefix}use potion_name 1 123\`\n• Or select a Pal first using \`${prefix}selectpet <id>\``
+                    `You must either:\n• Provide a Pal ID at the end: \`${prefix}use ${args[0]} ${args[1] || '1'} <pal_id>\`\n• Or select a Pal first using \`${prefix}select pet <id>\``
                 )
             };
         }
     }
-    
-    const pal = await Pet.findOne(palQuery);
-    
-    if (!pal) {
-        if (palIdProvided) {
-            return {
-                error: createWarningEmbed(
-                    'Pal Not Found', 
-                    `No Pal found with ID **${potentialId}**. Use \`${prefix}pets\` to see your Pals.`
-                )
-            };
-        } else {
-            return {
-                error: createWarningEmbed(
-                    'Selected Pal Not Found', 
-                    `Your selected Pal could not be found. Use \`${prefix}selectpet <id>\` to select a different Pal.`
-                )
-            };
-        }
-    }
-    
-    return { pal, palIdProvided };
 }
 
 module.exports = {
@@ -115,18 +87,17 @@ module.exports = {
     usage: '<item_name> [quantity] [pal_id]',
     examples: [
         'use healing 3',
-        'use level_potion 2 123',
+        'use level_potion x2 123',
         'use whispering_charm',
         'use starlight_infusion'
     ],
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({ 
-                    embeds: [createErrorEmbed('No Adventure Started', `You haven't started your journey yet! Use \`${prefix}start\` to begin.`)] 
-                });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
 
             if (args.length < 1) {
                 return message.reply({ 
@@ -137,12 +108,21 @@ module.exports = {
             // Parse arguments
             const itemName = args[0].toLowerCase();
             let quantity = 1;
+            let palId = null;
             
-            // Parse quantity if provided and it's a number
-            if (args.length > 1) {
-                const potentialQuantity = parseInt(args[1]);
-                if (!isNaN(potentialQuantity)) {
-                    quantity = Math.max(1, Math.min(100, potentialQuantity)); // Limit to reasonable range
+            // Parse args for quantity and pal ID
+            for (let i = 1; i < args.length; i++) {
+                const arg = args[i];
+                
+                // Check for quantity patterns: qty:2, x2, 2x
+                if (arg.startsWith('qty:') || arg.startsWith('x') || arg.endsWith('x')) {
+                    const num = parseInt(arg.replace(/qty:|x/gi, ''));
+                    if (!isNaN(num)) quantity = Math.max(1, Math.min(100, num));
+                } 
+                // Otherwise treat as pal ID
+                else {
+                    const num = parseInt(arg);
+                    if (!isNaN(num)) palId = num;
                 }
             }
 
@@ -153,10 +133,10 @@ module.exports = {
                 // Show similar items if any exist
                 const similarItems = player.inventory
                     .filter(i => {
-                        const itemData = allItems[i.itemId];
+                        const itemData = GameData.getItem(i.itemId);
                         return itemData && (itemData.usable || itemData.type === 'potion' || itemData.type === 'essence' || itemData.type === 'lure');
                     })
-                    .map(i => allItems[i.itemId].name)
+                    .map(i => GameData.getItem(i.itemId)?.name || 'Unknown')
                     .slice(0, 5);
                 
                 let errorMessage = `You don't have **${itemName.replace(/_/g, ' ')}** in your inventory.`;
@@ -169,7 +149,7 @@ module.exports = {
                 });
             }
 
-            const itemData = allItems[itemId];
+            const itemData = GameData.getItem(itemId);
             if (!itemData) {
                 return message.reply({ 
                     embeds: [createErrorEmbed('Invalid Item', 'This item data is corrupted or missing.')] 
@@ -179,7 +159,7 @@ module.exports = {
             // Check if item is usable
             if (!itemData.usable) {
                 return message.reply({ 
-                    embeds: [createWarningEmbed('Not Usable', `**${itemData.name}** cannot be used directly.`)] 
+                    embeds: [createWarningEmbed('Not Usable', `${CommandHelpers.getItemEmoji(itemData.name)} **${itemData.name}** cannot be used directly.`)] 
                 });
             }
 
@@ -188,7 +168,7 @@ module.exports = {
                 return message.reply({ 
                     embeds: [createWarningEmbed(
                         'Not Enough Items', 
-                        `You only have **${itemInInventory.quantity}x ${itemData.name}**, but you tried to use **${quantity}x**.`
+                        `You only have ${CommandHelpers.getItemEmoji(itemInInventory.itemId)} **${itemInInventory.quantity}x ${itemData.name}**, but you tried to use **${quantity}x**.`
                     )] 
                 });
             }
@@ -218,7 +198,7 @@ module.exports = {
                         const durationText = formatDuration(duration);
                         const strengthText = Math.round((strength - 1) * 100);
                         
-                        successMessage = `You activated **${quantity}x ${itemData.name}**!\n\n`;
+                        successMessage = `You activated ${CommandHelpers.getItemEmoji(itemData.name)} **${quantity}x ${itemData.name}**!\n\n`;
                         successMessage += `**Effect:** +${strengthText}% Pal encounter chance\n`;
                         successMessage += `**Duration:** ${durationText}\n\n`;
                         successMessage += `*The essence spreads around you, making you more attractive to wild Pals!*`;
@@ -266,7 +246,7 @@ module.exports = {
                         pal.currentHp = Math.min(pal.stats.hp, pal.currentHp + totalHealAmount);
                         const actualHealed = pal.currentHp - healthBefore;
                         
-                        successMessage = `You used **${quantity}x ${itemData.name}** on **${pal.nickname}**!\n\n`;
+                        successMessage = `You used ${CommandHelpers.getItemEmoji(itemData.name)} **${quantity}x ${itemData.name}** on **${pal.nickname}**!\n\n`;
                         successMessage += `**HP Restored:** +${actualHealed} HP\n`;
                         successMessage += `**Current HP:** ${pal.currentHp}/${pal.stats.hp}`;
                         
@@ -297,7 +277,7 @@ module.exports = {
                         }
                         
                         // Build success message
-                        successMessage = `You used **${quantity}x ${itemData.name}** on **${pal.nickname}**!\n\n`;
+                        successMessage = `You used ${CommandHelpers.getItemEmoji(itemData.name)} **${quantity}x ${itemData.name}** on **${pal.nickname}**!\n\n`;
                         
                         if (result.evolved) {
                             successMessage += `✨ **Evolution!** ${result.evolutionInfo.oldName} evolved into **${result.evolutionInfo.newName}**!\n`;

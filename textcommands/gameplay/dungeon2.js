@@ -14,9 +14,7 @@ const {
     createCustomEmbed,
     createInfoEmbed,
 } = require("../../utils/embed");
-const allPals = require("../../gamedata/pets");
-const allDungeons = require("../../gamedata/dungeons");
-const allItems = require("../../gamedata/items");
+const GameData = require("../../utils/gameData");
 const {
     CombatEngine,
     SkillManager,
@@ -26,6 +24,8 @@ const {
 } = require("../../utils/combat2");
 const { grantPalXp } = require("../../utils/leveling");
 const { restorePetHp } = require("../../utils/stamina");
+const LabManager = require('../../utils/labManager');
+const { updateQuestProgress } = require('../../utils/questSystem');
 
 /**
  * Dungeon Session Manager - handles active sessions
@@ -67,14 +67,14 @@ class DungeonManager {
                 throw new Error(`NO_DUNGEON_SELECTED:You haven't selected a preferred dungeon yet! Use \`${prefix}select dungeon\` to choose one.`);
             }
             dungeonId = player.preferences.selectedDungeon;
-            dungeon = allDungeons[dungeonId];
+            dungeon = GameData.getDungeon(dungeonId);
         } else if (args.length > 0) {
             dungeonId = args.join("_").toLowerCase();
-            dungeon = allDungeons[dungeonId];
+            dungeon = GameData.getDungeon(dungeonId);
         } else {
             if (player.preferences?.selectedDungeon) {
                 dungeonId = player.preferences.selectedDungeon;
-                dungeon = allDungeons[dungeonId];
+                dungeon = GameData.getDungeon(dungeonId);
             } else {
                 throw new Error(`NO_DUNGEON_SPECIFIED:Please specify a dungeon name or use \`${prefix}select dungeon\` to set a preferred dungeon, then use \`${prefix}dungeon quick\`.`);
             }
@@ -107,7 +107,8 @@ class DungeonManager {
         const allPets = await Pet.find({ ownerId: userId });
         for (const pet of allPets) {
             if (pet.status === "Injured") {
-                await restorePetHp(pet);
+                const { effects: labEffects } = await LabManager.getLabData(pet.ownerId);
+                await restorePetHp(pet, labEffects);
             }
         }
     }
@@ -119,7 +120,7 @@ class DungeonManager {
 class PotionManager {
     static getAvailablePotions(player) {
         return player.inventory.filter((item) => {
-            const itemData = allItems[item.itemId];
+            const itemData = GameData.getItem(item.itemId);
             return itemData && itemData.type === "potion" && item.quantity > 0;
         });
     }
@@ -138,7 +139,7 @@ class PotionManager {
         }
         await player.save();
 
-        return allItems[potionId];
+        return GameData.getItem(potionId);
     }
 
     static applyPotionEffects(pal, potion) {
@@ -156,8 +157,19 @@ class PotionManager {
                     break;
                     
                 case "stat_boost":
-                    if (enhancedPal.stats[effect.stat] !== undefined) {
-                        enhancedPal.stats[effect.stat] += effect.value;
+                    // Handle both formats: { stat: 'atk', value: 10 } or { stats: { atk: 10 } }
+                    if (effect.stats) {
+                        // New format: stats object
+                        Object.entries(effect.stats).forEach(([stat, value]) => {
+                            if (enhancedPal.stats[stat] !== undefined) {
+                                enhancedPal.stats[stat] += value;
+                            }
+                        });
+                    } else if (effect.stat && effect.value !== undefined) {
+                        // Old format: stat and value
+                        if (enhancedPal.stats[effect.stat] !== undefined) {
+                            enhancedPal.stats[effect.stat] += effect.value;
+                        }
                     }
                     break;
                     
@@ -191,7 +203,7 @@ class PotionManager {
                     break;
                     
                 case "familiar_type_boost":
-                    const palData = allPals[pal.basePetId];
+                    const palData = GameData.getPet(pal.basePetId);
                     const palType = palData?.type || "Beast";
                     if (palType.toLowerCase() === effect.target.toLowerCase()) {
                         Object.entries(effect.stats || {}).forEach(([stat, value]) => {
@@ -233,6 +245,22 @@ class PotionManager {
             effects.special = {
                 ability: effect.ability,
                 chance: effect.chance || 0.25,
+                duration: effect.duration,
+            };
+            // Handle bonus stats from special effects
+            if (effect.bonus_luck) {
+                effects.bonus_luck = effect.bonus_luck;
+            }
+            if (effect.crit_bonus) {
+                effects.crit_bonus = effect.crit_bonus;
+            }
+        }
+        
+        // Handle multi_element type
+        if (effect.type === "multi_element") {
+            effects.multi_element = {
+                elements: effect.elements || [],
+                damage_boost: effect.damage_boost || 0,
                 duration: effect.duration,
             };
         }
@@ -285,11 +313,11 @@ class RewardManager {
         let rewardString = `**+${floorRewards.gold1}** Gold\n**+${floorRewards.xp1}** XP`;
         
         floorRewards.loot.forEach((item) => {
-            rewardString += `\n**+${item.quantity}x** ${allItems[item.itemId].name}`;
+            rewardString += `\n**+${item.quantity}x** ${GameData.getItem(item.itemId)?.name || 'Unknown Item'}`;
         });
         
         if (floorRewards.egg) {
-            rewardString += `\n**+1x** ${allItems[floorRewards.egg.itemId].name}!`;
+            rewardString += `\n**+1x** ${GameData.getItem(floorRewards.egg.itemId)?.name || 'Unknown Item'}!`;
         }
 
         return rewardString;
@@ -346,13 +374,13 @@ class RewardManager {
             finalSummary += `\n\n**Items Obtained:**`;
 
             rewards.loot.forEach((item) => {
-                const itemData = allItems[item.itemId];
+                const itemData = GameData.getItem(item.itemId);
                 finalSummary += `\n• **${item.quantity}x** ${itemData.name}`;
             });
 
             if (rewards.egg.length > 0) {
                 rewards.egg.forEach((eggItem) => {
-                    const eggData = allItems[eggItem.itemId];
+                    const eggData = GameData.getItem(eggItem.itemId);
                     finalSummary += `\n• **${eggItem.quantity}x** ${eggData.name} 🥚`;
                 });
             }
@@ -428,8 +456,8 @@ class UIManager {
 
     static createPotionSelectionMenu(availablePotions, sessionId) {
         const potionOptions = availablePotions.map((item) => ({
-            label: `${allItems[item.itemId].name} (${item.quantity}x)`,
-            description: allItems[item.itemId].description.substring(0, 100),
+            label: `${GameData.getItem(item.itemId)?.name || 'Unknown'} (${item.quantity}x)`,
+            description: GameData.getItem(item.itemId)?.description?.substring(0, 100) || 'No description',
             value: item.itemId,
         }));
         
@@ -760,7 +788,7 @@ async function runDungeon(interaction, pal, dungeon, client, selectedPotion = nu
         const potionEffects = PotionManager.getPotionEffects(selectedPotion);
         
         // Get pal type and apply potion effects
-        const palData = allPals[pal.basePetId];
+        const palData = GameData.getPet(pal.basePetId);
         const palType = palData?.type || "Beast";
         const enhancedPal = PotionManager.applyPotionEffects(pal, selectedPotion);
         let palCurrentHp = enhancedPal.stats.hp;
@@ -1046,6 +1074,7 @@ async function finalizeDungeon(
         // Emit dungeon clear event if completed
         if (!wasDefeated && floorsCleared === dungeon.floors) {
             client.emit("dungeonClear", interaction.user.id);
+            await updateQuestProgress(interaction.user.id, 'clear_dungeons', 1);
         }
     } catch (error) {
         console.error("Error in finalizeDungeon:", error);

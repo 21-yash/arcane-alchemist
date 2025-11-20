@@ -75,7 +75,7 @@ module.exports = {
         source: 'foraging'
     },
     'silver_leaf': {
-        name: 'Silver leaf',
+        name: 'Silver Leaf',
         type: 'ingredient',
         rarity: 'Uncommon',
         description: 'Silvery leaves with potent restorative essence.',
@@ -398,7 +398,7 @@ module.exports = {
     'enchanted_charm': {
         name: 'Enchanted Charm',
         type: 'equipment',
-        rarity: 'uncommon',
+        rarity: 'Uncommon',
         slot: 'accessory',
         description: 'A charm humming with stored energy from a mana draught.',
         source: 'crafting',
@@ -465,7 +465,7 @@ module.exports = {
         slot: 'boots',
         description: 'Boots that allow the wearer to move with the speed of wind.',
         source: 'crafting',
-        stats: { spd: 25, dodge: 5 }
+        stats: { spd: 28, def: 3 }
     },
     'ember_blade': {
         name: 'Ember Blade',
@@ -492,7 +492,7 @@ module.exports = {
         slot: 'weapon',
         description: 'A blade forged from pure shadow essence, strikes from unexpected angles.',
         source: 'crafting',
-        stats: { atk: 22, crit: 25, special: 'shadow_strike' }
+        stats: { atk: 25, spd: 5, special: 'shadow_strike' }
     },
     'crystal_mace': {
         name: 'Crystal Mace',
@@ -510,7 +510,7 @@ module.exports = {
         slot: 'weapon',
         description: 'A bow crafted from wind crystals, arrows fly with supernatural speed.',
         source: 'crafting',
-        stats: { atk: 18, spd: 8, accuracy: 15, special: 'wind_shot' }
+        stats: { atk: 20, spd: 12, special: 'wind_shot' }
     },
     'soul_scythe': {
         name: 'Soul Scythe',
@@ -519,7 +519,7 @@ module.exports = {
         slot: 'weapon',
         description: 'A terrifying weapon that can cut through both flesh and spirit.',
         source: 'crafting',
-        stats: { atk: 26, crit: 15, special: 'soul_harvest' }
+        stats: { atk: 28, spd: 3, special: 'soul_harvest' }
     },
     'mechanical_hammer': {
         name: 'Mechanical Hammer',
@@ -528,7 +528,7 @@ module.exports = {
         slot: 'weapon',
         description: 'A precision-engineered war hammer with hydraulic enhancement.',
         source: 'crafting',
-        stats: { atk: 20, accuracy: 12, special: 'crushing_blow' }
+        stats: { atk: 22, def: 3, special: 'crushing_blow' }
     },
     'void_whip': {
         name: 'Void Whip',
@@ -546,7 +546,7 @@ module.exports = {
         slot: 'weapon',
         description: 'A massive axe from a bygone era, still sharp after centuries.',
         source: 'crafting',
-        stats: { atk: 24, crit: 10, special: 'ancient_fury' }
+        stats: { atk: 26, spd: 2, special: 'ancient_fury' }
     },
     'obsidian_katana': {
         name: 'Obsidian Katana',
@@ -555,7 +555,7 @@ module.exports = {
         slot: 'weapon',
         description: 'A masterwork blade of volcanic glass, perfectly balanced and deadly sharp.',
         source: 'crafting',
-        stats: { atk: 28, crit: 20, accuracy: 10, special: 'volcanic_edge' }
+        stats: { atk: 32, spd: 5, special: 'volcanic_edge' }
     },
     'storm_trident': {
         name: 'Storm Trident',
@@ -573,7 +573,7 @@ module.exports = {
         slot: 'weapon',
         description: 'A massive blade that radiates terror, forged from crystallized nightmares.',
         source: 'crafting',
-        stats: { atk: 35, crit: 25, special: 'terror_strike' }
+        stats: { atk: 40, spd: 5, special: 'terror_strike' }
     },
     'celestial_lance': {
         name: 'Celestial Lance',
@@ -582,7 +582,7 @@ module.exports = {
         slot: 'weapon',
         description: 'A divine spear that shines with starlight, blessed by celestial beings.',
         source: 'crafting',
-        stats: { atk: 32, accuracy: 20, luck: 15, special: 'divine_thrust' }
+        stats: { atk: 35, spd: 5, luck: 15, special: 'divine_thrust' }
     },
     'spirit_staff': {
         name: 'Spirit Staff',
@@ -667,7 +667,7 @@ module.exports = {
         slot: 'leg',
         description: 'Light trousers enhanced with wind crystals for swift movement.',
         source: 'crafting',
-        stats: { hp: 25, def: 8, spd: 15, dodge: 8 }
+        stats: { hp: 30, def: 10, spd: 18 }
     },
     'frost_guard_leggings': {
         name: 'Frost Guard Leggings',
@@ -725,7 +725,7 @@ module.exports = {
         slot: 'offhand',
         description: 'A single precision-crafted gauntlet that enhances grip and dexterity.',
         source: 'crafting',
-        stats: { atk: 8, accuracy: 15, crit: 5 }
+        stats: { atk: 12, def: 5 }
     },
     'void_shield': {
         name: 'Void Shield',
@@ -763,7 +763,7 @@ module.exports = {
         slot: 'accessory',
         description: 'An elegant brooch adorned with sky-creature plumes, lightening the wearer\'s step.',
         source: 'crafting',
-        stats: { spd: 12, dodge: 10, wind_resist: 15} // 
+        stats: { spd: 15, def: 3, wind_resist: 15} // 
     },
     'soul_pendant': {
         name: 'Soul Pendant',
@@ -781,7 +781,7 @@ module.exports = {
         slot: 'accessory',
         description: 'A terrifying necklace that radiates fear, causing enemies to hesitate.',
         source: 'crafting',
-        stats: { atk: 25, crit: 20, special: 'terror_aura' }
+        stats: { atk: 30, luck: 10, special: 'terror_aura' }
     },
 
     // --- TAMING LURES (Foraging/Boss) ---
@@ -964,184 +964,79 @@ module.exports = {
         source: 'shop'
     },
 
-    // --- EGGS (Dungeon/Event Drops) ---
-    // --- Common Eggs (Hatch Time: 1 Hour) ---
-    'common_beast_egg': {
-        name: 'Common Beast Egg',
+    // --- EGGS (type-based) ---
+    'beast_egg': {
+        name: 'Beast Egg',
         type: 'egg',
         rarity: 'Common',
-        description: 'A simple, sturdy egg with earthy tones. It feels warm to the touch.',
-        hatchTimeMinutes: 60,
-        possiblePals: ['forest_rabbit']
+        description: 'A sturdy egg covered in earthen patterns. It hums with primal life.',
+        hatchTimeMinutes: 240,
+        eggType: 'Beast',
+        rarityWeights: { common: 0.55, uncommon: 0.25, rare: 0.15, epic: 0.04, legendary: 0.01 }
     },
-    'common_elemental_egg': {
-        name: 'Common Elemental Egg',
+    'elemental_egg': {
+        name: 'Elemental Egg',
         type: 'egg',
         rarity: 'Common',
-        description: 'This egg is slightly warm and seems to hum with a faint inner energy.',
-        hatchTimeMinutes: 60,
-        possiblePals: ['flame_sprite']
+        description: 'The shell shifts between colors, crackling faintly with elemental currents.',
+        hatchTimeMinutes: 300,
+        eggType: 'Elemental',
+        rarityWeights: { common: 0.5, uncommon: 0.25, rare: 0.15, epic: 0.07, legendary: 0.03 }
     },
-    'common_mystic_egg': {
-        name: 'Common Mystic Egg',
+    'mystic_egg': {
+        name: 'Mystic Egg',
         type: 'egg',
         rarity: 'Common',
-        description: 'Faint patterns like leaves and vines are visible just beneath its shell.',
-        hatchTimeMinutes: 60,
-        possiblePals: ['sproutling']
+        description: 'Runes glow softly across the shell, whispering secrets of the arcane.',
+        hatchTimeMinutes: 360,
+        eggType: 'Mystic',
+        rarityWeights: { common: 0.45, uncommon: 0.25, rare: 0.18, epic: 0.08, legendary: 0.04 }
     },
-    'common_undead_egg': {
-        name: 'Common Undead Egg',
+    'undead_egg': {
+        name: 'Undead Egg',
         type: 'egg',
         rarity: 'Common',
-        description: 'A strangely cold and brittle egg. You can hear a faint rattling inside.',
-        hatchTimeMinutes: 60,
-        possiblePals: ['skeletal_rat']
+        description: 'Ice-cold to the touch, faint rattling echoes within the shell.',
+        hatchTimeMinutes: 300,
+        eggType: 'Undead',
+        rarityWeights: { common: 0.5, uncommon: 0.25, rare: 0.15, epic: 0.07, legendary: 0.03 }
     },
-    'common_mechanical_egg': {
-        name: 'Common Mechanical Egg',
+    'mechanical_egg': {
+        name: 'Mechanical Egg',
         type: 'egg',
         rarity: 'Common',
-        description: 'A metallic sphere covered in seams and rivets. It occasionally clicks softly.',
-        hatchTimeMinutes: 60,
-        possiblePals: ['gear_pup']
+        description: 'An intricate orb of gears and plates that occasionally clicks into motion.',
+        hatchTimeMinutes: 360,
+        eggType: 'Mechanical',
+        rarityWeights: { common: 0.45, uncommon: 0.3, rare: 0.15, epic: 0.07, legendary: 0.03 }
     },
-
-    // --- Uncommon Eggs (Hatch Time: 4 Hours) ---
-    'uncommon_beast_egg': {
-        name: 'Uncommon Beast Egg',
-        type: 'egg',
-        rarity: 'Uncommon',
-        description: 'A tough, leathery egg marked with primal patterns.',
-        hatchTimeMinutes: 240,
-        possiblePals: ['dire_wolf']
-    },
-    'uncommon_elemental_egg': {
-        name: 'Uncommon Elemental Egg',
-        type: 'egg',
-        rarity: 'Uncommon',
-        description: 'This egg shifts in color and temperature, charged with raw elemental power.',
-        hatchTimeMinutes: 240,
-        possiblePals: ['pyre_elemental', 'crystal_sprite']
-    },
-    'uncommon_mystic_egg': {
-        name: 'Uncommon Mystic Egg',
-        type: 'egg',
-        rarity: 'Uncommon',
-        description: 'It feels ancient and is covered in swirling, mystical symbols.',
-        hatchTimeMinutes: 240,
-        possiblePals: ['grove_guardian']
-    },
-    'uncommon_undead_egg': {
-        name: 'Uncommon Undead Egg',
-        type: 'egg',
-        rarity: 'Uncommon',
-        description: 'A heavy, stone-like egg that feels unnaturally cold.',
-        hatchTimeMinutes: 240,
-        possiblePals: ['bone_hound']
-    },
-    'uncommon_mechanical_egg': {
-        name: 'Uncommon Mechanical Egg',
-        type: 'egg',
-        rarity: 'Uncommon',
-        description: 'A precisely engineered ovoid of brass and copper.',
-        hatchTimeMinutes: 240,
-        possiblePals: ['tin_golem', 'steel_hound']
-    },
-
-    // --- Rare Eggs (Hatch Time: 8 Hours) ---
-    'rare_beast_egg': {
-        name: 'Rare Beast Egg',
-        type: 'egg',
-        rarity: 'Rare',
-        description: 'This fossilized egg is as hard as rock, containing a powerful primal creature.',
-        hatchTimeMinutes: 480,
-        possiblePals: ['stone_boar', 'iron gryphon']
-    },
-    'rare_mystic_egg': {
-        name: 'Rare Mystic Egg',
-        type: 'egg',
-        rarity: 'Rare',
-        description: 'The shell is translucent, revealing a galaxy of swirling motes of light within.',
-        hatchTimeMinutes: 480,
-        possiblePals: ['moon_owl']
-    },
-    'rare_mechanical_egg': {
-        name: 'Rare Mechanical Egg',
-        type: 'egg',
-        rarity: 'Rare',
-        description: 'A massive sphere of interlocking iron plates, humming with power.',
-        hatchTimeMinutes: 480,
-        possiblePals: ['iron_colossus']
-    },
-
-    // --- Epic Eggs (Hatch Time: 12 Hours) ---
-    'epic_elemental_egg': {
-        name: 'Epic Elemental Egg',
-        type: 'egg',
-        rarity: 'Epic',
-        description: 'Light bends around this perfectly smooth, crystalline egg.',
-        hatchTimeMinutes: 720,
-        possiblePals: ['prism_guardian', 'frost_serpent', 'storm_roc']
-    },
-    'epic_undead_egg': {
-        name: 'Epic Undead Egg',
-        type: 'egg',
-        rarity: 'Epic',
-        description: 'Bound in ethereal chains, this egg contains the soul of a mighty warrior.',
-        hatchTimeMinutes: 720,
-        possiblePals: ['phantom_knight']
-    },
-
-    // --- Legendary Eggs (Hatch Time: 24 Hours) ---
-    'legendary_mystic_egg': {
-        name: 'Legendary Mystic Egg',
-        type: 'egg',
-        rarity: 'Legendary',
-        description: 'This egg radiates immense heat and light, like a miniature star. It promises a Pal of myth.',
-        hatchTimeMinutes: 1440,
-        possiblePals: ['star_phoenix', 'ancient_treant', 'celestial_kirin']
-    },
-    'legendary_mechanical_egg': {
-        name: 'Legendary Mechanical Egg',
-        type: 'egg',
-        rarity: 'Legendary',
-        description: 'An intricate orb of forgotten alloys and glowing gems. The pinnacle of arcane engineering.',
-        hatchTimeMinutes: 1440,
-        possiblePals: ['clockwork_dragon']
-    },
-    'legendary_undead_egg': {
-        name: 'Legendary Undead Egg',
-        type: 'egg',
-        rarity: 'Legendary',
-        description: 'A terrifying egg wrapped in shadows, pulsing with malevolent energy.',
-        hatchTimeMinutes: 1440,
-        possiblePals: ['shadow_wyrm']
-    },
-    'legendary_elemental_egg': {
-        name: 'Legendary Elemental Egg',
-        type: 'egg',
-        rarity: 'Legendary',
-        description: 'An egg that appears to hold a swirling galaxy within its translucent shell.',
-        hatchTimeMinutes: 1440,
-        possiblePals: ['aether_wing_drake']
-    },
-    'legendary_beast_egg': {
-        name: 'Legendary Beast Egg',
-        type: 'egg',
-        rarity: 'Legendary',
-        description: 'An egg glowing with the raw, slumbering power of the earth\'s core.',
-        hatchTimeMinutes: 1440,
-        possiblePals: ['world_render_behemoth']
-    },
-    // --- BREEDING EXCLUSIVE EGG ---
     'hybrid_beast_egg': {
-        name: 'Hybrid Beast Egg',
+        name: 'Hybrid Core Egg',
         type: 'egg',
-        rarity: 'Epic',
-        description: 'A strange, pulsating egg that radiates both intense heat and a wild aura. Hatches in 18 hours.',
-        hatchTimeMinutes: 1080, // 18 hours
-        possiblePals: ['lava_hound'] 
+        rarity: 'Common',
+        description: 'A volatile egg radiating both elemental heat and bestial fury.',
+        hatchTimeMinutes: 720,
+        eggType: 'Hybrid',
+        rarityWeights: { common: 0.2, uncommon: 0.3, rare: 0.25, epic: 0.2, legendary: 0.05 },
+        possiblePals: ['lava_hound']
+    },    
+    'aeonic_egg': {
+        name: 'Aeonic Egg',
+        type: 'egg',
+        rarity: 'Common',
+        description: 'An egg suffused with temporal energy. The air shimmers around it as time bends.',
+        hatchTimeMinutes: 480,
+        eggType: 'Aeonic',
+        rarityWeights: { common: 0.35, uncommon: 0.30, rare: 0.2, epic: 0.1, legendary: 0.05 }
+    },
+    'abyssal_egg': {
+        name: 'Abyssal Egg',
+        type: 'egg',
+        rarity: 'Common',
+        description: 'A dark egg leaking wisps of void energy. Staring at it for too long feels dangerous.',
+        hatchTimeMinutes: 420,
+        eggType: 'Abyssal',
+        rarityWeights: { common: 0.3, uncommon: 0.3, rare: 0.2, epic: 0.15, legendary: 0.05 }
     },    
 
 

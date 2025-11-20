@@ -12,6 +12,24 @@ const LaboratorySchema = new mongoose.Schema({
         upgradeId: String,
         expiresAt: { type: Date }
     }],
+    researchPoints: { type: Number, default: 0 },
+    lastResearchTick: { type: Date, default: null },
+    arcaneDustStored: { type: Number, default: 0 },
+    lastArcaneDustTick: { type: Date, default: null },
+    autoBrewer: {
+        recipeId: { type: String, default: null },
+        storage: {
+            type: [{
+                itemId: { type: String },
+                quantity: { type: Number, default: 0 }
+            }],
+            default: []
+        },
+        lastTick: { type: Date, default: null }
+    },
+    appliedBonuses: {
+        stamina: { type: Number, default: 0 }
+    },
     decorations: [String], // Array of decoration IDs
     layout: {
         theme: { type: String, default: 'basic' },

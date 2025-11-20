@@ -2,8 +2,8 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const Player = require('../../models/Player');
 const { createErrorEmbed, createInfoEmbed, createCustomEmbed } = require('../../utils/embed');
-const allItems = require('../../gamedata/items');
-const allRecipes = require('../../gamedata/recipes');
+const GameData = require('../../utils/gameData');
+const CommandHelpers = require('../../utils/commandHelpers');
 
 module.exports = {
     name: 'grimoire',
@@ -11,16 +11,15 @@ module.exports = {
     usage: '[potion_name]',
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({
-                    embeds: [createErrorEmbed('No Adventure Started', `You haven't started your journey yet! Use \`${prefix}start\` to begin.`)]
-                });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
 
             // Get all potion recipes
-            const potionRecipes = Object.entries(allRecipes).filter(([recipeId, recipe]) => {
-                const resultItem = allItems[recipe.result.itemId];
+            const potionRecipes = Object.entries(GameData.recipes).filter(([recipeId, recipe]) => {
+                const resultItem = GameData.getItem(recipe.result.itemId);
                 return resultItem && resultItem.type === 'potion';
             });
 
@@ -42,11 +41,11 @@ module.exports = {
                     );
 
                     pageRecipes.forEach(([recipeId, recipe]) => {
-                        const potion = allItems[recipe.result.itemId];
+                        const potion = GameData.getItem(recipe.result.itemId);
                         const isKnown = player.grimoire.includes(recipeId);
                         const status = isKnown ? '✅' : '❓';
                         const ingredients = recipe.ingredients.map(ing => 
-                            `${allItems[ing.itemId].name} x${ing.quantity}`
+                            `${CommandHelpers.getItemEmoji(ing.itemId)} \`x${ing.quantity}\` ${GameData.getItem(ing.itemId)?.name || 'Unknown'}`
                         ).join(', ');
 
                         embed.addFields({
@@ -111,30 +110,30 @@ module.exports = {
                 const searchTerm = args.join(' ').toLowerCase().replace(/\s+/g, '_');
                 
                 // Find potion by name or ID
-                const potionId = Object.keys(allItems).find(id => 
+                const potionId = Object.keys(GameData.items).find(id => 
                     id.toLowerCase() === searchTerm ||
-                    allItems[id].name.toLowerCase().replace(/\s+/g, '_') === searchTerm
+                    GameData.getItem(id)?.name?.toLowerCase().replace(/\s+/g, '_') === searchTerm
                 );
 
-                if (!potionId || allItems[potionId].type !== 'potion') {
+                if (!potionId || GameData.getItem(potionId)?.type !== 'potion') {
                     return message.reply({
                         embeds: [createErrorEmbed('Potion Not Found', `Could not find a potion named "${args.join(' ')}".`)]
                     });
                 }
 
                 // Find the recipe for this potion
-                const recipeEntry = Object.entries(allRecipes).find(([recipeId, recipe]) => 
+                const recipeEntry = Object.entries(GameData.recipes).find(([recipeId, recipe]) => 
                     recipe.result.itemId === potionId
                 );
 
                 if (!recipeEntry) {
                     return message.reply({
-                        embeds: [createErrorEmbed('No Recipe Found', `No recipe exists for ${allItems[potionId].name}.`)]
+                        embeds: [createErrorEmbed('No Recipe Found', `No recipe exists for ${GameData.getItem(potionId)?.name || 'Unknown'}.`)]
                     });
                 }
 
                 const [recipeId, recipe] = recipeEntry;
-                const potion = allItems[potionId];
+                const potion = GameData.getItem(potionId);
                 const isKnown = player.grimoire.includes(recipeId);
 
                 const embed = createCustomEmbed(
@@ -168,7 +167,7 @@ module.exports = {
 
                 if (isKnown) {
                     const ingredients = recipe.ingredients.map(ing => 
-                        `• ${allItems[ing.itemId].name} x${ing.quantity}`
+                        `• ${CommandHelpers.getItemEmoji(ing.itemId)} \`x${ing.quantity}\` ${GameData.getItem(ing.itemId)?.name || 'Unknown'}`
                     ).join('\n');
                     
                     embed.addFields(

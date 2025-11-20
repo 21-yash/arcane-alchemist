@@ -3,13 +3,13 @@ const Player = require('../../models/Player');
 const Pet = require('../../models/Pet');
 const { createErrorEmbed, createSuccessEmbed, createInfoEmbed, createWarningEmbed } = require('../../utils/embed');
 const { restoreStamina } = require('../../utils/stamina');
-const allBiomes = require('../../gamedata/biomes');
-const allItems = require('../../gamedata/items');
-const allPals = require('../../gamedata/pets');
+const GameData = require('../../utils/gameData');
 const config = require('../../config/config.json');
 const { grantPlayerXp } = require('../../utils/leveling');
 const cooldowns = new Map();
 const { updateQuestProgress } = require('../../utils/questSystem');
+const CommandHelpers = require('../../utils/commandHelpers');
+const LabManager = require('../../utils/labManager');
 
 module.exports = {
     name: 'forage',
@@ -33,10 +33,13 @@ module.exports = {
         }
 
         try {
-            let player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({ embeds: [createErrorEmbed('No Adventure Started', `You haven't started your journey yet! Use \`${prefix}start\` to begin.`)] });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            let player = playerResult.player;
+
+            const { effects: labEffects } = await LabManager.loadPlayerLab(player);
 
             let biomeId;
             if (args.length > 0) {
@@ -44,13 +47,13 @@ module.exports = {
             } else if (player.preferences?.selectedBiome) {
                 biomeId = player.preferences.selectedBiome;
             } else {
-                biomeId = Object.keys(allBiomes)[0];
+                biomeId = Object.keys(GameData.biomes)[0];
             }
             
-            const biome = allBiomes[biomeId];
+            const biome = GameData.getBiome(biomeId);
 
             if (!biome) {
-                const availableBiomes = Object.values(allBiomes).map(b => `\`${b.name}\``).join(', ');
+                const availableBiomes = Object.values(GameData.biomes).map(b => `\`${b.name}\``).join(', ');
                 return message.reply({ embeds: [createErrorEmbed('Invalid Biome', `That biome does not exist. Available biomes: ${availableBiomes}`)] });
             }
 
@@ -58,7 +61,7 @@ module.exports = {
                 return message.reply({ embeds: [createErrorEmbed('Level Too Low', `You must be level **${biome.levelRequirement}** to forage in the **${biome.name}**.`)] });
             }
 
-            player = await restoreStamina(player);
+            player = await restoreStamina(player, labEffects);
 
             // if (player.stamina < biome.staminaCost) {
             //     const staminaNeeded = biome.staminaCost - player.stamina;
@@ -70,8 +73,12 @@ module.exports = {
 
             const foundLoot = [];
             for (const lootItem of biome.lootTable) {
-                if (Math.random() < lootItem.chance) {
-                    const quantity = Math.floor(Math.random() * (lootItem.quantityRange[1] - lootItem.quantityRange[0] + 1)) + lootItem.quantityRange[0];
+                const chanceBonus = 1 + (labEffects?.rareItemChanceBonus || 0);
+                const lootChance = Math.min(1, lootItem.chance * chanceBonus);
+                if (Math.random() < lootChance) {
+                    const baseQuantity = Math.floor(Math.random() * (lootItem.quantityRange[1] - lootItem.quantityRange[0] + 1)) + lootItem.quantityRange[0];
+                    const quantityMultiplier = 1 + (labEffects?.forageYieldBonus || 0);
+                    const quantity = Math.max(1, Math.round(baseQuantity * quantityMultiplier));
                     foundLoot.push({ itemId: lootItem.itemId, quantity });
                 }
             }
@@ -88,7 +95,7 @@ module.exports = {
                     } else {
                         player.inventory.push({ itemId: loot.itemId, quantity: loot.quantity });
                     }
-                    lootDescription += `+ **${loot.quantity}x** ${allItems[loot.itemId].name}\n`;
+                    lootDescription += `+ **${loot.quantity}x** ${GameData.getItem(loot.itemId)?.name || 'Unknown'}\n`;
                 });
             } else {
                 lootDescription = 'You searched carefully but found nothing of value.';
@@ -102,7 +109,7 @@ module.exports = {
                 lootDescription, { footer: { text: `Stamina: ${player.stamina}/${player.maxStamina}`, iconURL: message.member.displayAvatarURL() }, thumbnail: biome.pic }
             );
             await message.reply({ embeds: [successEmbed] });
-            grantPlayerXp(client, message, message.author.id, biome.staminaCost);
+            grantPlayerXp(client, message, message.author.id, biome.staminaCost, { labEffects });
             await updateQuestProgress(message.author.id, 'forage_times', 1);
             if (foundLoot.length > 0) {
                 await updateQuestProgress(message.author.id, 'collect_items', foundLoot.length);
@@ -112,7 +119,7 @@ module.exports = {
             if (biome.possiblePals && biome.possiblePals.length > 0) {
                 for (const pal of biome.possiblePals) {
                     if (Math.random() < pal.chance) {
-                        encounteredPalInfo = { ...allPals[pal.palId], id: pal.palId };
+                        encounteredPalInfo = { ...GameData.getPet(pal.palId), id: pal.palId };
                         break;
                     }
                 }
@@ -194,13 +201,15 @@ module.exports = {
                 });
             }
 
-            const expirationTime = Date.now() + 60000;
+            const cooldownReduction = Math.min((labEffects?.forageCooldownReduction || 0) + (labEffects?.globalCooldownReduction || 0), 0.9);
+            const cooldownDuration = 60000 * (1 - cooldownReduction);
+            const expirationTime = Date.now() + cooldownDuration;
             cooldowns.set(message.author.id, expirationTime);
 
             // After the duration, remove the user from the cooldowns map
             setTimeout(() => {
                 cooldowns.delete(message.author.id);
-            }, 60 * 1000);
+            }, cooldownDuration);
 
         } catch (error) {
             console.error('Forage command error:', error);

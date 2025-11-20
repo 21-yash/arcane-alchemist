@@ -26,7 +26,7 @@ function initializeGameEventListeners(client) {
     
     // --- POTION BREW EVENT ---
     client.on('potionBrewed', (playerId) => {
-        checkAchievements(client, playerId, 'potionBrew');
+        checkAchievements(client, playerId, 'potionBrewed');
     });
 
     // --- PAL BREED EVENT ---
@@ -38,6 +38,16 @@ function initializeGameEventListeners(client) {
     client.on('itemCrafted', (playerId, itemId) => {
         checkAchievements(client, playerId, 'itemsCrafted');
         checkAchievements(client, playerId, 'itemCraft', itemId);
+    });
+
+    // --- EXPEDITION COMPLETE EVENT ---
+    client.on('expeditionComplete', (playerId) => {
+        checkAchievements(client, playerId, 'expeditionComplete');
+    });
+
+    // --- ARENA WIN EVENT ---
+    client.on('arenaWin', (playerId) => {
+        checkAchievements(client, playerId, 'arenaWin');
     });
 
     console.log('[Game Events] Listeners initialized.');

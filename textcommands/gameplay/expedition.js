@@ -3,8 +3,10 @@ const Player = require('../../models/Player');
 const Pet = require('../../models/Pet');
 const Expedition = require('../../models/Expedition');
 const { createErrorEmbed, createSuccessEmbed, createInfoEmbed, createCustomEmbed } = require('../../utils/embed');
-const allPals = require('../../gamedata/pets');
-const allItems = require('../../gamedata/items');
+const GameData = require('../../utils/gameData');
+const CommandHelpers = require('../../utils/commandHelpers');
+const LabManager = require('../../utils/labManager');
+const { updateQuestProgress } = require('../../utils/questSystem');
 
 const expeditionTypes = {
     resource_gathering: {
@@ -75,12 +77,13 @@ module.exports = {
     aliases: ['exp', 'explore'],
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({
-                    embeds: [createErrorEmbed('No Adventure Started', `You haven't started your journey yet! Use \`${prefix}start\` to begin.`)]
-                });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
+            const labContext = await LabManager.loadPlayerLab(player);
+            const labEffects = labContext.effects;
 
             // Check for active expeditions
             if (args[0]?.toLowerCase() === 'status') {
@@ -88,7 +91,7 @@ module.exports = {
             }
 
             if (args[0]?.toLowerCase() === 'collect') {
-                return this.collectExpeditions(message, player, client);
+                return this.collectExpeditions(message, player, client, labEffects);
             }
 
             // Get available pals (not injured, not on expeditions, etc.)
@@ -140,7 +143,7 @@ module.exports = {
                 } else if (i.isStringSelectMenu() && i.customId === 'select_pal_for_expedition') {
                     await this.handlePalSelection(i, player);
                 } else if (i.isStringSelectMenu() && i.customId === 'select_difficulty') {
-                    await this.handleDifficultySelection(i, player, client);
+                    await this.handleDifficultySelection(i, player, client, labEffects);
                 }
             });
 
@@ -162,7 +165,7 @@ module.exports = {
             .setPlaceholder('Choose a Pal for this expedition...')
             .addOptions(
                 availablePals.slice(0, 25).map(pal => {
-                    const palData = allPals[pal.basePetId];
+                    const palData = GameData.getPet(pal.basePetId);
                     return {
                         label: `${pal.nickname} (Lv.${pal.level})`,
                         description: `${palData.type} - HP:${pal.stats.hp} ATK:${pal.stats.atk} DEF:${pal.stats.def}`,
@@ -207,7 +210,7 @@ module.exports = {
         });
     },
 
-    async handleDifficultySelection(interaction, player, client) {
+    async handleDifficultySelection(interaction, player, client, labEffects) {
         const [palId, expeditionTypeKey, difficultyKey] = interaction.values[0].split(':');
         
         try {
@@ -217,7 +220,9 @@ module.exports = {
             
             // Calculate expedition duration
             const baseDuration = expeditionType.baseTime * difficulty.timeReduction;
-            const endTime = new Date(Date.now() + baseDuration * 60 * 1000);
+            const timeReduction = Math.min(labEffects?.expeditionTimeReduction || 0, 0.8);
+            const adjustedDuration = baseDuration * (1 - timeReduction);
+            const endTime = new Date(Date.now() + adjustedDuration * 60 * 1000);
             
             // Create expedition record
             const expedition = new Expedition({
@@ -227,8 +232,8 @@ module.exports = {
                 difficulty: difficultyKey,
                 endTime: endTime,
                 riskFactors: {
-                    injuryChance: expeditionType.risks.injury * difficulty.riskMod,
-                    lostChance: expeditionType.risks.lost * difficulty.riskMod
+                    injuryChance: Math.max(0, (expeditionType.risks.injury * difficulty.riskMod) * (1 - (labEffects?.expeditionSuccessBonus || 0)) - (labEffects?.expeditionInjuryReduction || 0)),
+                    lostChance: Math.max(0, (expeditionType.risks.lost * difficulty.riskMod) * (1 - (labEffects?.expeditionSuccessBonus || 0)) - (labEffects?.expeditionLostReduction || 0))
                 }
             });
 
@@ -292,7 +297,7 @@ module.exports = {
         return message.reply({ embeds: [embed] });
     },
 
-    async collectExpeditions(message, player, client) {
+    async collectExpeditions(message, player, client, labEffects) {
         const completedExpeditions = await Expedition.find({ 
             userId: message.author.id, 
             status: 'active',
@@ -307,6 +312,7 @@ module.exports = {
 
         let totalRewards = { xp: 0, gold: 0, items: {} };
         let resultText = '';
+        let successfulExpeditions = 0;
 
         for (const expedition of completedExpeditions) {
             const pal = await Pet.findOne({ petId: expedition.palId });
@@ -334,8 +340,10 @@ module.exports = {
                 resultText += `💔 **${pal.nickname}** got lost and returned with nothing!\n`;
             } else {
                 // Calculate rewards
-                const xpReward = Math.floor((Math.random() * (expeditionType.rewards.xp[1] - expeditionType.rewards.xp[0]) + expeditionType.rewards.xp[0]) * difficulty.multiplier);
-                const goldReward = Math.floor((Math.random() * (expeditionType.rewards.gold[1] - expeditionType.rewards.gold[0]) + expeditionType.rewards.gold[0]) * difficulty.multiplier);
+                const rewardMultiplier = labEffects?.expeditionRewardMultiplier || 1;
+                const xpReward = Math.floor((Math.random() * (expeditionType.rewards.xp[1] - expeditionType.rewards.xp[0]) + expeditionType.rewards.xp[0]) * difficulty.multiplier * rewardMultiplier);
+                const goldBase = Math.floor((Math.random() * (expeditionType.rewards.gold[1] - expeditionType.rewards.gold[0]) + expeditionType.rewards.gold[0]) * difficulty.multiplier * rewardMultiplier);
+                const goldReward = LabManager.applyGoldBonus(goldBase, labEffects);
 
                 totalRewards.xp += xpReward;
                 totalRewards.gold += goldReward;
@@ -350,6 +358,7 @@ module.exports = {
 
                 resultText += `✅ **${pal.nickname}** returned successfully${injured ? ' (injured)' : ''}!\n`;
                 resultText += `Gained: ${xpReward} XP, ${goldReward} gold\n`;
+                successfulExpeditions++;
             }
 
             expedition.status = 'completed';
@@ -369,14 +378,23 @@ module.exports = {
             }
         }
 
+        if (successfulExpeditions > 0) {
+            player.stats.expeditionsCompleted = (player.stats.expeditionsCompleted || 0) + successfulExpeditions;
+        }
+
         await player.save();
+
+        if (successfulExpeditions > 0) {
+            client.emit('expeditionComplete', message.author.id, successfulExpeditions);
+            await updateQuestProgress(message.author.id, 'complete_expeditions', successfulExpeditions);
+        }
 
         // Show results
         let rewardSummary = `**Total Rewards:**\n💰 ${totalRewards.gold} Gold\n`;
         if (Object.keys(totalRewards.items).length > 0) {
             rewardSummary += '**Items:**\n';
             for (const [itemId, quantity] of Object.entries(totalRewards.items)) {
-                rewardSummary += `${allItems[itemId]?.name || itemId} x${quantity}\n`;
+                rewardSummary += `${GameData.getItem(itemId)?.name || itemId} x${quantity}\n`;
             }
         }
 

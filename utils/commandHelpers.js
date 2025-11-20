@@ -1,8 +1,11 @@
 const Player = require('../models/Player');
+const Pet = require('../models/Pet');
 const QuestProgress = require('../models/Quest');
 const { createErrorEmbed, createSuccessEmbed, createWarningEmbed, createInfoEmbed } = require('./embed');
 const { initializeQuestProgress } = require('./questSystem');
-const gameCache = require('./gameCache');
+const GameData = require('./gameData');
+const { getMember } = require('./functions');
+const config = require('../config/config.json');
 
 /**
  * Utility class for common command validation and helper functions
@@ -129,15 +132,23 @@ class CommandHelpers {
      */
     static getItemData(itemId) {
         try {
-            if (gameCache.has('items')) {
-                const items = gameCache.get('items');
-                return items[itemId] || null;
-            }
-            // Fallback to direct require
-            const items = require('../gamedata/items');
-            return items[itemId] || null;
+            return GameData.getItem(itemId);
         } catch (error) {
             console.error('Error getting item data:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get pet data safely
+     * @param {string} petId - Pet ID
+     * @returns {Object|null} Pet data or null
+     */
+    static getPetData(petId) {
+        try {
+            return GameData.getPet(petId);
+        } catch (error) {
+            console.error('Error getting pet data:', error);
             return null;
         }
     }
@@ -169,17 +180,239 @@ class CommandHelpers {
      */
     static getQuestData(questId) {
         try {
-            if (gameCache.has('quests')) {
-                const quests = gameCache.get('quests');
-                return quests[questId] || null;
-            }
-            // Fallback to direct require
-            const quests = require('../gamedata/quests');
-            return quests[questId] || null;
+            return GameData.getQuest(questId);
         } catch (error) {
             console.error('Error getting quest data:', error);
             return null;
         }
+    }
+
+    /**
+     * Validate and get pet by owner and short ID
+     * @param {string} ownerId - Owner user ID
+     * @param {number} shortId - Pet short ID
+     * @param {string} prefix - Command prefix for error messages
+     * @returns {Promise<Object>} Validation result with pet data
+     */
+    static async validatePet(ownerId, shortId, prefix = '') {
+        try {
+            if (!shortId || isNaN(shortId)) {
+                return {
+                    success: false,
+                    embed: createErrorEmbed(
+                        'Invalid Pet ID',
+                        `Pet ID must be a number. Use \`${prefix}pet\` to see your Pals.`
+                    )
+                };
+            }
+
+            const pet = await Pet.findOne({ ownerId, shortId: parseInt(shortId) });
+            
+            if (!pet) {
+                return {
+                    success: false,
+                    embed: createErrorEmbed(
+                        'Pet Not Found',
+                        `No Pal found with ID **${shortId}**. Use \`${prefix}pet\` to see your Pals.`
+                    )
+                };
+            }
+
+            return {
+                success: true,
+                pet
+            };
+        } catch (error) {
+            console.error('Error validating pet:', error);
+            return {
+                success: false,
+                embed: createErrorEmbed(
+                    'Database Error',
+                    'Unable to access pet data. Please try again later.'
+                )
+            };
+        }
+    }
+
+    /**
+     * Get player's idle pets
+     * @param {string} ownerId - Owner user ID
+     * @param {Object} options - Query options
+     * @param {number} [options.minLevel] - Minimum level
+     * @param {number} [options.limit] - Maximum number of pets to return
+     * @returns {Promise<Array>} Array of pet objects
+     */
+    static async getPlayerIdlePets(ownerId, options = {}) {
+        try {
+            const query = { ownerId, status: 'Idle' };
+            if (options.minLevel) {
+                query.level = { $gte: options.minLevel };
+            }
+
+            let queryBuilder = Pet.find(query).sort({ level: -1 });
+            if (options.limit) {
+                queryBuilder = queryBuilder.limit(options.limit);
+            }
+
+            return await queryBuilder;
+        } catch (error) {
+            console.error('Error getting player idle pets:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Find item in inventory by name or ID (fuzzy search)
+     * @param {Object} player - Player object
+     * @param {string} itemName - Item name or ID to search for
+     * @returns {Object} Found item with itemId, or null if not found
+     */
+    static findItemInInventory(player, itemName) {
+        const searchName = itemName.toLowerCase().replace(/[_\s-]/g, '');
+        
+        // First, try exact match by itemId
+        let item = player.inventory.find(i => i.itemId === itemName.toLowerCase());
+        if (item) {
+            return { item, itemId: item.itemId };
+        }
+        
+        // Then try to find by partial name match
+        for (const invItem of player.inventory) {
+            const itemData = this.getItemData(invItem.itemId);
+            if (!itemData) continue;
+            
+            const cleanItemName = itemData.name.toLowerCase().replace(/[_\s-]/g, '');
+            const cleanItemId = invItem.itemId.replace(/[_\s-]/g, '');
+            
+            if (cleanItemName.includes(searchName) || cleanItemId.includes(searchName)) {
+                return { item: invItem, itemId: invItem.itemId };
+            }
+        }
+        
+        return { item: null, itemId: null };
+    }
+
+    /**
+     * Check if player has a specific item
+     * @param {Object} player - Player object
+     * @param {string} itemId - Item ID to check
+     * @param {number} quantity - Required quantity (default: 1)
+     * @returns {boolean} Whether player has the item
+     */
+    static hasItem(player, itemId, quantity = 1) {
+        const item = player.inventory.find(i => i.itemId === itemId);
+        return item && item.quantity >= quantity;
+    }
+
+    /**
+     * Format item name for display
+     * @param {string} itemId - Item ID
+     * @param {number} quantity - Item quantity (optional)
+     * @returns {string} Formatted item name
+     */
+    static formatItemName(itemId, quantity = null) {
+        const itemData = this.getItemData(itemId);
+        const name = itemData?.name || itemId;
+        return quantity !== null ? `${quantity}x ${name}` : name;
+    }
+
+    /**
+     * Format pet name for display
+     * @param {string} petId - Pet ID
+     * @param {Object} pet - Pet object (optional, for nickname)
+     * @returns {string} Formatted pet name
+     */
+    static formatPetName(petId, pet = null) {
+        const petData = this.getPetData(petId);
+        const baseName = petData?.name || petId;
+        return pet?.nickname || baseName;
+    }
+
+    /**
+     * Get member from message (author or mentioned user)
+     * @param {Object} message - Discord message object
+     * @param {string} arg - Argument string (mention or user ID)
+     * @returns {Promise<Object|null>} Guild member or null
+     */
+    static async getMemberFromMessage(message, arg) {
+        try {
+            return getMember(message, arg) || message.member;
+        } catch (error) {
+            console.error('Error getting member from message:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Validate player and return error embed if not found
+     * @param {string} userId - User ID
+     * @param {string} prefix - Command prefix
+     * @param {Object} message - Message object (for member context)
+     * @returns {Promise<Object>} Result with player or error embed
+     */
+    static async requirePlayer(userId, prefix, message = null) {
+        const result = await this.validatePlayer(userId, prefix);
+        if (!result.success) {
+            return result;
+        }
+        return result;
+    }
+
+    /**
+     * Validate pet and return error embed if not found
+     * @param {string} ownerId - Owner user ID
+     * @param {number} shortId - Pet short ID
+     * @param {string} prefix - Command prefix
+     * @returns {Promise<Object>} Result with pet or error embed
+     */
+    static async requirePet(ownerId, shortId, prefix) {
+        return await this.validatePet(ownerId, shortId, prefix);
+    }
+
+    /**
+     * Get player's inventory item by ID
+     * @param {Object} player - Player object
+     * @param {string} itemId - Item ID
+     * @returns {Object|null} Inventory item or null
+     */
+    static getInventoryItem(player, itemId) {
+        return player.inventory.find(item => item.itemId === itemId) || null;
+    }
+
+    /**
+     * Check if pet is available (not in use)
+     * @param {Object} pet - Pet object
+     * @returns {boolean} Whether pet is available
+     */
+    static isPetAvailable(pet) {
+        return pet && pet.status === 'Idle' && (pet.currentHp === null || pet.currentHp > 0);
+    }
+
+    /**
+     * Format time remaining
+     * @param {Date} targetDate - Target date
+     * @returns {string} Formatted time string
+     */
+    static formatTimeRemaining(targetDate) {
+        if (!targetDate) return 'N/A';
+        
+        const now = new Date();
+        const timeLeft = targetDate - now;
+        
+        if (timeLeft <= 0) return 'Ready!';
+        
+        return this.formatDuration(timeLeft);
+    }
+
+    /**
+     * Create XP progress bar
+     * @param {number} currentXp - Current XP
+     * @param {number} requiredXp - Required XP for next level
+     * @param {number} length - Bar length (default: 10)
+     * @returns {string} Progress bar string
+     */
+    static createXPProgressBar(currentXp, requiredXp, length = 10) {
+        return this.createProgressBar(currentXp, requiredXp, length);
     }
 
     /**
@@ -400,7 +633,166 @@ class CommandHelpers {
                 };
             });
     }
-    
+
+    /**
+     * Get user's target member (self or mentioned user)
+     * @param {Object} message - Discord message
+     * @param {Array} args - Command arguments
+     * @param {string} prefix - Command prefix
+     * @returns {Promise<Object>} Result with member and player
+     */
+    static async getTargetMember(message, args, prefix) {
+        const member = await this.getMemberFromMessage(message, args.join(' '));
+        
+        if (!member) {
+            return {
+                success: false,
+                embed: createErrorEmbed('User Not Found', 'Could not find the specified user.')
+            };
+        }
+
+        const playerResult = await this.validatePlayer(member.id, prefix);
+        if (!playerResult.success) {
+            return playerResult;
+        }
+
+        return {
+            success: true,
+            member,
+            player: playerResult.player
+        };
+    }
+
+    /**
+     * Validate and get multiple pets by short IDs
+     * @param {string} ownerId - Owner user ID
+     * @param {Array<number>} shortIds - Array of pet short IDs
+     * @param {string} prefix - Command prefix
+     * @returns {Promise<Object>} Result with pets array
+     */
+    static async validatePets(ownerId, shortIds, prefix) {
+        const pets = [];
+        const errors = [];
+
+        for (const shortId of shortIds) {
+            const result = await this.validatePet(ownerId, shortId, prefix);
+            if (result.success) {
+                pets.push(result.pet);
+            } else {
+                errors.push(result.embed);
+            }
+        }
+
+        if (errors.length > 0) {
+            return {
+                success: false,
+                embed: errors[0] // Return first error
+            };
+        }
+
+        return {
+            success: true,
+            pets
+        };
+    }
+
+    /**
+     * Check if player has required level
+     * @param {Object} player - Player object
+     * @param {number} requiredLevel - Required level
+     * @returns {Object} Validation result
+     */
+    static checkLevel(player, requiredLevel) {
+        if (player.level < requiredLevel) {
+            return {
+                success: false,
+                embed: createErrorEmbed(
+                    'Level Too Low',
+                    `You need to be level **${requiredLevel}** to do this. You are currently level **${player.level}**.`
+                )
+            };
+        }
+        return { success: true };
+    }
+
+    /**
+     * Check if player has required gold
+     * @param {Object} player - Player object
+     * @param {number} requiredGold - Required gold amount
+     * @returns {Object} Validation result
+     */
+    static checkGold(player, requiredGold) {
+        if (player.gold < requiredGold) {
+            return {
+                success: false,
+                embed: createErrorEmbed(
+                    'Insufficient Gold',
+                    `You need **${requiredGold}** gold for this. You currently have **${player.gold}** gold.`
+                )
+            };
+        }
+        return { success: true };
+    }
+
+    /**
+     * Get emoji for an item from config
+     * @param {string} item - Item ID or name
+     * @returns {Promise<string>} Emoji or empty string
+     */
+    static getItemEmoji(item) {
+        try {
+            let name;
+            
+            const itemData = this.getItemData(item);
+            if (itemData && itemData.name) {
+                name = itemData.name;
+            } else {
+                name = String(item);
+            }
+           
+            let emoji = config.emojis[name];
+
+            if (!emoji && itemData?.type === 'egg') {
+                const rarityPrefixes = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Hybrid'];
+                const words = name.split(' ');
+                
+                if (words.length > 2 && rarityPrefixes.includes(words[0])) {
+                    const baseName = words.slice(1).join(' ');
+                    emoji = config.emojis[baseName];
+                }
+            }
+
+            return emoji || '';
+        } catch (err) {
+            console.error('Error fetching item emoji:', err);
+            return '';
+        }
+    } 
+
+    /**
+     * Get emoji for a pal from config
+     * @param {string} pal - Pal ID or name
+     * @returns {Promise<string>} Emoji or empty string
+     */
+    static getPalEmoji(pal) {
+        try {
+            let name;
+            
+            const palData = GameData.getPet(pal);
+            if (palData && palData.name) {
+                name = palData.name;
+            } else {
+                name = String(pal);
+            }
+           
+            let emoji = config.emojis[name];
+
+            return emoji || '';
+        } catch (err) {
+            console.error('Error fetching pal emoji:', err);
+            return '';
+        }
+    } 
 }
 
 module.exports = CommandHelpers;

@@ -131,6 +131,10 @@ async function completeQuest(questProgress, questId, questInfo) {
                 if (questInfo.rewards.gold) {
                     player.gold += questInfo.rewards.gold;
                 }
+
+                if (questInfo.rewards.arcaneDust) {
+                    player.arcaneDust = (player.arcaneDust || 0) + questInfo.rewards.arcaneDust;
+                }
                 
                 if (questInfo.rewards.reputation) {
                     for (const [faction, rep] of Object.entries(questInfo.rewards.reputation)) {

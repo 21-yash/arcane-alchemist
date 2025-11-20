@@ -4,13 +4,13 @@ module.exports = {
         name: 'Forest Sprite',
         type: 'Mystic',
         rarity: 'Common',
-        baseStats: { hp: 25, atk: 7, def: 3 }
+        baseStats: { hp: 2500, atk: 7, def: 3 }
     },
     'wild_boar': {
         name: 'Wild Boar',
         type: 'Beast',
         rarity: 'Common',
-        baseStats: { hp: 40, atk: 10, def: 6 }
+        baseStats: { hp: 4000, atk: 10, def: 6 }
     },
     'elderwood_guardian': {
         name: 'Elderwood Guardian',

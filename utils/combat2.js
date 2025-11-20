@@ -993,7 +993,7 @@ class StatusProcessor {
 
             if (attacker.skillBonuses?.fearChance && Math.random() < attacker.skillBonuses.fearChance) {
                 StatusEffectManager.applyStatusEffect(target, 'fear');
-                logger.add(`😱 **${attackerName}** strikes terror into the enemy!`);
+                logger.add(`😱 **Terror From Below!** ${attackerName} strikes terror into the enemy!`);
             }
 
             if (attacker.skillBonuses?.silenceChance && Math.random() < attacker.skillBonuses.silenceChance) {
@@ -1130,6 +1130,10 @@ class EquipmentEffectProcessor {
 class CombatEngine {
     constructor() {
         this.logger = new CombatLogger();
+        this.silentLogger = {
+            add: () => {},
+            addMultiple: () => {}
+        };
     }
 
     async simulateDungeonBattle(pal, enemy, potionEffects = {}, equipmentEffects = {}, 
@@ -1149,8 +1153,12 @@ class CombatEngine {
             let turn = 0;
             let reviveUsed = false;
             let invulnerabilityTurns = 0;
-            let paradoxActive = false;
-            let paradoxStoredDamage = 0;
+            const paradoxState = {
+                active: false,
+                storedDamage: 0,
+                recoilPercent: 0.5,
+                pendingRecoil: false
+            };
 
             this.logger.clear();
             
@@ -1165,6 +1173,8 @@ class CombatEngine {
                 );
                 palCurrentHp = palStatusResult.creature.currentHp;
                 enhancedPal.statusEffects = palStatusResult.creature.statusEffects;
+                // Store modified stats for damage calculations
+                const palModifiedStats = palStatusResult.creature.stats;
                 this.logger.addMultiple(palStatusResult.battleLog);
 
                 const enemyStatusResult = StatusEffectManager.processStatusEffects(
@@ -1173,21 +1183,25 @@ class CombatEngine {
                 );
                 enemyCurrentHp = enemyStatusResult.creature.currentHp;
                 enemy.statusEffects = enemyStatusResult.creature.statusEffects;
+                // Store modified stats for damage calculations
+                const enemyModifiedStats = enemyStatusResult.creature.stats;
                 this.logger.addMultiple(enemyStatusResult.battleLog);
 
                 if (invulnerabilityTurns > 0) invulnerabilityTurns--;
 
                 // Handle paradox loop recoil damage from previous turn
-                if (paradoxActive && paradoxStoredDamage > 0) {
-                    this.logger.add(`⏰ **Temporal Recoil!** ${pal.nickname || pal.name} takes ${paradoxStoredDamage} delayed damage!`);
-                    palCurrentHp = Math.max(0, palCurrentHp - paradoxStoredDamage);
-                    paradoxStoredDamage = 0;
-                    paradoxActive = false;
-                    
-                    if (palCurrentHp <= 0) {
-                        this.logger.add(`💀 Your **${pal.nickname || pal.name}** has been defeated by temporal paradox!`);
-                        break;
+                if (paradoxState.pendingRecoil) {
+                    if (paradoxState.storedDamage > 0) {
+                        this.logger.add(`⏰ **Temporal Recoil!** ${pal.nickname || pal.name} takes ${paradoxState.storedDamage} delayed damage!`);
+                        palCurrentHp = Math.max(0, palCurrentHp - paradoxState.storedDamage);
+                        
+                        if (palCurrentHp <= 0) {
+                            this.logger.add(`💀 Your **${pal.nickname || pal.name}** has been defeated by temporal paradox!`);
+                            break;
+                        }
                     }
+                    paradoxState.storedDamage = 0;
+                    paradoxState.pendingRecoil = false;
                 }
 
                 const palCanAct = palStatusResult.canAct !== false;
@@ -1196,12 +1210,20 @@ class CombatEngine {
                 // Pal's turn
                 if (palCanAct && enemyCurrentHp > 0) {
                     const attackResult = this.executeAttack(
-                        enhancedPal, enemy, palType, enemyType, 
+                        { ...enhancedPal, stats: palModifiedStats }, 
+                        { ...enemy, stats: enemyModifiedStats }, 
+                        palType, enemyType, 
                         equipmentEffects, potionEffects, enemyResistances,
                         pal.nickname || pal.name, enemy.name
                     );
                     
                     enemyCurrentHp = Math.max(0, enemyCurrentHp - attackResult.damage);
+                    
+                    // Apply reflected damage from elemental shield
+                    if (attackResult.reflectedDamage > 0) {
+                        palCurrentHp = Math.max(0, palCurrentHp - attackResult.reflectedDamage);
+                        this.logger.add(`⚡ **${pal.nickname || pal.name} takes ${attackResult.reflectedDamage} reflected damage!**`);
+                    }
                     
                     // Handle Abyssal Devourer fear application
                     if (attackResult.applyFear) {
@@ -1223,33 +1245,57 @@ class CombatEngine {
                 // Enemy's turn
                 if (enemyCanAct && enemyCurrentHp > 0 && palCurrentHp > 0) {
                     // Check for paradox loop activation
-                    const paradoxCheck = SkillManager.checkActivation(enhancedPal, "paradox_loop");
+                    const paradoxCheck = (!paradoxState.active && !paradoxState.pendingRecoil)
+                        ? SkillManager.checkActivation(enhancedPal, "paradox_loop")
+                        : null;
                     if (paradoxCheck?.type === "paradox_loop") {
                         this.logger.add(paradoxCheck.message);
-                        paradoxActive = true;
+                        paradoxState.active = true;
+                        paradoxState.recoilPercent = paradoxCheck.recoilPercent || 0.5;
+                        paradoxState.storedDamage = 0;
                     }
 
-                    if (invulnerabilityTurns > 0 || paradoxActive) {
-                        const immunityMessage = paradoxActive ? 
+                    if (invulnerabilityTurns > 0 || paradoxState.active) {
+                        const paradoxTriggered = paradoxState.active;
+                        const immunityMessage = paradoxTriggered ? 
                             `🔮 **${pal.nickname || pal.name}** exists outside of time - attacks pass through harmlessly!` :
                             `🛡️ **${pal.nickname || pal.name}** is invulnerable to damage!`;
                         this.logger.add(immunityMessage);
                         
                         // Store damage for paradox recoil
-                        if (paradoxActive) {
-                            const wouldBeDamage = DamageCalculator.calculate(
-                                enemy.stats, enhancedPal.stats, enemyType, palType, palResistances
-                            ).damage;
-                            paradoxStoredDamage = Math.floor(wouldBeDamage * (paradoxCheck.recoilPercent || 0.5));
-                            this.logger.add(`⏰ *Storing ${paradoxStoredDamage} temporal damage...*`);
+                        if (paradoxTriggered) {
+                            const simulatedAttack = this.simulateEnemyAttack(
+                                enemy,
+                                { ...enhancedPal, stats: palModifiedStats },
+                                enemyType,
+                                palType,
+                                palResistances,
+                                enemy.name,
+                                pal.nickname || pal.name
+                            );
+
+                            const wouldBeDamage = Math.max(0, simulatedAttack.damage);
+                            const storedChunk = Math.floor(wouldBeDamage * paradoxState.recoilPercent);
+                            paradoxState.storedDamage += storedChunk;
+                            this.logger.add(`⏰ *Storing ${storedChunk} temporal damage (total ${paradoxState.storedDamage}).*`);
+                            paradoxState.active = false;
+                            paradoxState.pendingRecoil = true;
                         }
                     } else {
                         const enemyAttackResult = this.executeEnemyAttack(
-                            enemy, enhancedPal, enemyType, palType,
+                            { ...enemy, stats: enemyModifiedStats }, 
+                            { ...enhancedPal, stats: palModifiedStats }, 
+                            enemyType, palType,
                             palResistances, enemy.name, pal.nickname || pal.name
                         );
                         
                         palCurrentHp = Math.max(0, palCurrentHp - enemyAttackResult.damage);
+                        
+                        // Apply reflected damage from elemental shield
+                        if (enemyAttackResult.reflectedDamage > 0) {
+                            enemyCurrentHp = Math.max(0, enemyCurrentHp - enemyAttackResult.reflectedDamage);
+                            this.logger.add(`⚡ **${enemy.name} takes ${enemyAttackResult.reflectedDamage} reflected damage!**`);
+                        }
 
                         if (palCurrentHp <= 0) {
                             if (this.handleDeath(enhancedPal, equipmentEffects, reviveUsed)) {
@@ -1291,40 +1337,47 @@ class CombatEngine {
 
     executeAttack(attacker, defender, attackerType, defenderType, equipmentEffects, 
              potionEffects, defenderResistances, attackerName, defenderName, 
-             defenderEquipmentEffects = null) {  // Add this parameter
+             defenderEquipmentEffects = null, options = {}) {  // Add this parameter
+        const logger = options.logger || this.logger;
         let totalDamage = 0;
         let lifesteal = 0;
         let applyFear = false;
         let elementalStormTriggered = false;
         let abyssalDevourerTriggered = false;
+        let reflectDamageTotal = 0;
 
         try {
             // Check for defensive skills BEFORE hit calculation
             const divineProtection = SkillManager.checkActivation(defender, "divine_protection");
             if (divineProtection?.type === "divine_protection") {
-                this.logger.add(divineProtection.message);
-                this.logger.add(`> The attack is completely negated!`);
+                logger.add(divineProtection.message);
+                logger.add(`> The attack is completely negated!`);
                 return { damage: 0, lifesteal: 0, applyFear: false };
             }
 
             const dodgeSkill = SkillManager.checkActivation(defender, "dodge");
             if (dodgeSkill?.type === "dodge") {
-                this.logger.add(dodgeSkill.message);
+                logger.add(dodgeSkill.message);
                 
                 // Check for counter-attack
                 const counterSkill = SkillManager.checkActivation(defender, "counter");
                 if (counterSkill?.type === "counter") {
-                    this.logger.add(counterSkill.message);
-                    this.logger.add(`⚔️ Counter-attack deals **${counterSkill.damage}** damage!`);
+                    logger.add(counterSkill.message);
+                    logger.add(`⚔️ Counter-attack deals **${counterSkill.damage}** damage!`);
                     // Note: Counter damage should be applied by caller
                 }
                 return { damage: 0, lifesteal: 0, applyFear: false, counterDamage: counterSkill?.damage || 0 };
             }
 
-            const hitResult = HitCalculator.compute(attacker.stats, defender.stats, attacker.equipment, defender.equipment);
-        
-        if (Math.random() > hitResult.hitChance) {
-            this.logger.add(`💨 **${attackerName}**'s attack misses!`);
+            // Check for phase_dodge (defensive potion effect)
+            // Note: This should be passed as defenderPotionEffects parameter
+            let effectiveHitChance = HitCalculator.compute(attacker.stats, defender.stats, attacker.equipment, defender.equipment).hitChance;
+            
+            // Phase dodge reduces hit chance (handled via defender's evasion stat boost from potion)
+            // The potion effect is applied to stats in applyPotionEffects, so it's already handled
+            
+        if (Math.random() > effectiveHitChance) {
+            logger.add(`💨 **${attackerName}**'s attack misses!`);
             return { 
                 damage: 0, 
                 lifesteal: 0, 
@@ -1336,7 +1389,7 @@ class CombatEngine {
         }
 
             // Get all skill activations
-            const skillActivations = this.checkSkillActivations(attacker, attackerName);
+            const skillActivations = this.checkSkillActivations(attacker, attackerName, logger);
             let damageMultiplier = skillActivations.multiplier;
             let attackCount = skillActivations.attackCount;
             applyFear = skillActivations.applyFear;
@@ -1360,30 +1413,29 @@ class CombatEngine {
                 attack.damage = Math.floor(attack.damage * damageMultiplier);
 
                 const weaponResult = WeaponAbilityProcessor.process(
-                    attacker.stats, equipmentEffects, attackerName, this.logger
+                    attacker.stats, equipmentEffects, attackerName, logger
                 );
                 attack.damage += weaponResult.damage;
 
                 const offensiveResult = EquipmentEffectProcessor.processOffensive(
-                    attacker, equipmentEffects, attackerName, this.logger
+                    attacker, equipmentEffects, attackerName, logger
                 );
                 attack.damage = Math.floor(attack.damage * offensiveResult.damageModifier);
 
-                attack.damage = this.applyPotionEffects(attack.damage, potionEffects, attackerName);
+                attack.damage = this.applyPotionEffects(attack.damage, potionEffects, attackerName, logger);
 
                 // Check for Elemental Shield on defender
                 const elementalShield = SkillManager.checkActivation(defender, "elemental_shield");
                 if (elementalShield?.type === "elemental_shield") {
-                    this.logger.add(elementalShield.message);
+                    logger.add(elementalShield.message);
                     const absorbedDamage = Math.floor(attack.damage * elementalShield.absorb);
                     attack.damage -= absorbedDamage;
-                    this.logger.add(`🛡️ **Shield absorbs ${absorbedDamage} damage!**`);
+                    logger.add(`🛡️ **Shield absorbs ${absorbedDamage} damage!**`);
                     
-                    const reflectDamage = Math.floor(absorbedDamage * elementalShield.reflection);
-                    if (reflectDamage > 0) {
-                        this.logger.add(`⚡ **Shield reflects ${reflectDamage} damage back!**`);
-                        // Note: Reflected damage should be applied by caller
-                        return { damage: attack.damage, lifesteal: 0, applyFear: false, counterDamage: reflectDamage || 0 };
+                    const reflectThisHit = Math.floor(absorbedDamage * elementalShield.reflection);
+                    reflectDamageTotal += reflectThisHit;
+                    if (reflectThisHit > 0) {
+                        logger.add(`⚡ **Shield reflects ${reflectThisHit} damage back!**`);
                     }
                 }
 
@@ -1392,14 +1444,14 @@ class CombatEngine {
                     const originalDamage = attack.damage;
                     attack.damage = Math.floor(attack.damage * (1 - defender.skillBonuses.damageReduction));
                     if (originalDamage !== attack.damage) {
-                        this.logger.add(`🛡️ **Damage Reduction** reduces damage by ${originalDamage - attack.damage}!`);
+                        logger.add(`🛡️ **Damage Reduction** reduces damage by ${originalDamage - attack.damage}!`);
                     }
                 }
 
                 // Process defensive equipment effects
                 if (defenderEquipmentEffects) {
                     const defensiveResult = EquipmentEffectProcessor.processDefensive(
-                        defender, defenderEquipmentEffects, defenderName, attack.damage, this.logger
+                        defender, defenderEquipmentEffects, defenderName, attack.damage, logger
                     );
                     
                     attack.damage = Math.max(0, attack.damage - defensiveResult.damageReduction);
@@ -1408,58 +1460,69 @@ class CombatEngine {
                     defensiveResult.statusEffects.forEach(status => {
                         StatusEffectManager.applyStatusEffect(attacker, status);
                         const statusIcon = StatusProcessor.getStatusIcon(status);
-                        this.logger.add(`${statusIcon} **${attackerName}** is afflicted with ${status}!`);
+                        logger.add(`${statusIcon} **${attackerName}** is afflicted with ${status}!`);
                     });
                 }
 
                 totalDamage += attack.damage;
-                this.logAttack(attackerName, attack, attackerType, defenderType, attackNum === 0 || attackCount === 1);
+                this.logAttack(attackerName, attack, attackerType, defenderType, attackNum === 0 || attackCount === 1, logger);
 
                 // Check for temporal echo
                 const temporalEcho = SkillManager.checkActivation(attacker, "temporal_echo");
                 if (temporalEcho?.type === "temporal_echo") {
-                    this.logger.add(temporalEcho.message);
+                    logger.add(temporalEcho.message);
                     const echoDamage = Math.floor(attack.damage * temporalEcho.multiplier);
                     totalDamage += echoDamage;
-                    this.logger.add(`⏰ **Echo Strike** deals **${echoDamage}** additional damage!`);
+                    logger.add(`⏰ **Echo Strike** deals **${echoDamage}** additional damage!`);
                 }
             }
 
             // Apply lifesteal
             if (attacker.skillBonuses?.lifesteal) {
                 lifesteal = Math.floor(totalDamage * attacker.skillBonuses.lifesteal);
-                this.logger.add(`💉 **Life Drain!** ${attackerName} recovers ${lifesteal} HP!`);
+                logger.add(`💉 **Life Drain!** ${attackerName} recovers ${lifesteal} HP!`);
             }
 
+            // Apply Abyssal Tide (dotDamage) - damage over time
+            if (attacker.skillBonuses?.dotDamage) {
+                const dotDamage = Math.floor(totalDamage * attacker.skillBonuses.dotDamage);
+                if (dotDamage > 0) {
+                    logger.add(`🌊 **Abyssal Tide!** Dark waters deal ${dotDamage} damage over time!`);
+                    // Apply the dot damage immediately as additional damage
+                    totalDamage += dotDamage;
+                }
+            }
+            
             // Process status effect infliction
-            StatusProcessor.inflictStatus(attacker, defender, attackerName, this.logger);
+            StatusProcessor.inflictStatus(attacker, defender, attackerName, logger);
 
         } catch (error) {
             console.error('Error executing attack:', error);
         }
 
-        return { damage: totalDamage, lifesteal, applyFear, counterDamage: 0, elementalStormTriggered, abyssalDevourerTriggered };
+        return { damage: totalDamage, lifesteal, applyFear, counterDamage: 0, elementalStormTriggered, abyssalDevourerTriggered, reflectedDamage: reflectDamageTotal };
     }
 
-    executeEnemyAttack(enemy, defender, attackerType, defenderType, defenderResistances, attackerName, defenderName) {
+    executeEnemyAttack(enemy, defender, attackerType, defenderType, defenderResistances, attackerName, defenderName, options = {}) {
+        const logger = options.logger || this.logger;
         try {
             const divineProtection = SkillManager.checkActivation(defender, "divine_protection");
             const dodgeSkill = SkillManager.checkActivation(defender, "dodge");
 
             if (divineProtection?.type === "divine_protection") {
-                this.logger.add(divineProtection.message);
-                this.logger.add(`> The attack is completely negated!`);
+                logger.add(divineProtection.message);
+                logger.add(`> The attack is completely negated!`);
                 return { damage: 0 };
             }
 
             if (dodgeSkill?.type === "dodge") {
-                this.logger.add(dodgeSkill.message);
-                this.logger.add(`> The attack is dodged!`);
+                logger.add(dodgeSkill.message);
+                logger.add(`> The attack is dodged!`);
                 
                 const counterSkill = SkillManager.checkActivation(defender, "counter");
                 if (counterSkill?.type === "counter") {
-                    this.logger.add(counterSkill.message);
-                    this.logger.add(`⚔️ Counter-attack deals **${counterSkill.damage}** damage!`);
+                    logger.add(counterSkill.message);
+                    logger.add(`⚔️ Counter-attack deals **${counterSkill.damage}** damage!`);
                 }
                 return { damage: 0 };
             }
@@ -1470,16 +1533,17 @@ class CombatEngine {
             
             // Check for elemental shield on defender
             const elementalShield = SkillManager.checkActivation(defender, "elemental_shield");
+            let reflectDamage = 0;
             if (elementalShield?.type === "elemental_shield") {
-                this.logger.add(elementalShield.message);
+                logger.add(elementalShield.message);
                 
                 const absorbedDamage = Math.floor(attack.damage * elementalShield.absorb);
                 attack.damage -= absorbedDamage;
-                this.logger.add(`🛡️ **Shield absorbs ${absorbedDamage} damage!**`);
+                logger.add(`🛡️ **Shield absorbs ${absorbedDamage} damage!**`);
                 
-                const reflectDamage = Math.floor(absorbedDamage * elementalShield.reflection);
+                reflectDamage = Math.floor(absorbedDamage * elementalShield.reflection);
                 if (reflectDamage > 0) {
-                    this.logger.add(`⚡ **Shield reflects ${reflectDamage} damage back to ${attackerName}!**`);
+                    logger.add(`⚡ **Shield reflects ${reflectDamage} damage back to ${attackerName}!**`);
                 }
             }
 
@@ -1488,27 +1552,66 @@ class CombatEngine {
                 const originalDamage = attack.damage;
                 attack.damage = Math.floor(attack.damage * (1 - defender.skillBonuses.damageReduction));
                 if (originalDamage !== attack.damage) {
-                    this.logger.add(`🛡️ **Armor Plating** reduces damage by ${originalDamage - attack.damage}!`);
+                    logger.add(`🛡️ **Armor Plating** reduces damage by ${originalDamage - attack.damage}!`);
                 }
             }
 
-            // Apply Abyssal defense reduction
-            if (enemy.skillBonuses?.defReduction) {
-                const originalDamage = attack.damage;
-                attack.damage = Math.floor(attack.damage * (1 + enemy.skillBonuses.defReduction));
-                this.logger.add(`😱 **Terror From Below** amplifies damage by ${attack.damage - originalDamage}!`);
-            }
+            // Note: defReduction from Terror From Below is now applied at battle start, not per attack
 
-            this.logEnemyAttack(attackerName, attack, attackerType, defenderType);
+            this.logEnemyAttack(attackerName, attack, attackerType, defenderType, logger);
 
-            return { damage: attack.damage };
+            return { damage: attack.damage, reflectedDamage: reflectDamage };
         } catch (error) {
             console.error('Error executing enemy attack:', error);
             return { damage: 1 };
         }
     }
 
-    checkSkillActivations(attacker, attackerName) {
+    simulatePlayerAttack(attacker, defender, attackerType, defenderType, equipmentEffects, potionEffects, defenderResistances, attackerName, defenderName, defenderEquipmentEffects = null) {
+        try {
+            const attackerClone = StatManager.cloneCreature(attacker);
+            const defenderClone = StatManager.cloneCreature(defender);
+            return this.executeAttack(
+                attackerClone,
+                defenderClone,
+                attackerType,
+                defenderType,
+                equipmentEffects,
+                potionEffects,
+                defenderResistances,
+                attackerName,
+                defenderName,
+                defenderEquipmentEffects,
+                { logger: this.silentLogger }
+            );
+        } catch (error) {
+            console.error('Error simulating player attack:', error);
+            return { damage: 0, reflectedDamage: 0 };
+        }
+    }
+
+    simulateEnemyAttack(enemy, defender, attackerType, defenderType, defenderResistances, attackerName, defenderName) {
+        try {
+            const enemyClone = StatManager.cloneCreature(enemy);
+            const defenderClone = StatManager.cloneCreature(defender);
+            return this.executeEnemyAttack(
+                enemyClone,
+                defenderClone,
+                attackerType,
+                defenderType,
+                defenderResistances,
+                attackerName,
+                defenderName,
+                { logger: this.silentLogger }
+            );
+        } catch (error) {
+            console.error('Error simulating enemy attack:', error);
+            return { damage: 0 };
+        }
+    }
+
+    checkSkillActivations(attacker, attackerName, customLogger = null) {
+        const logger = customLogger || this.logger;
         let multiplier = 1;
         let attackCount = 1;
         let applyFear = false;
@@ -1523,7 +1626,7 @@ class CombatEngine {
             );
             
             if (silenced) {
-                this.logger.add(`🤫 **${attackerName}** is silenced and cannot use skills!`);
+                logger.add(`🤫 **${attackerName}** is silenced and cannot use skills!`);
                 return { multiplier, attackCount, applyFear, enhancedLifesteal, elementalStormTriggered, abyssalDevourerTriggered };
             }
 
@@ -1537,27 +1640,27 @@ class CombatEngine {
             if (elementalStorm?.type === "elemental_storm") {
                 multiplier *= elementalStorm.multiplier;
                 elementalStormTriggered = true;
-                this.logger.add(elementalStorm.message);
+                logger.add(elementalStorm.message);
             }
 
             if (executeSkill?.type === "execute") {
                 multiplier *= executeSkill.multiplier;
-                this.logger.add(executeSkill.message);
+                logger.add(executeSkill.message);
             }
 
             if (overloadSkill?.type === "overload") {
                 multiplier *= overloadSkill.multiplier;
-                this.logger.add(overloadSkill.message);
+                logger.add(overloadSkill.message);
             }
 
             if (multiAttack?.type === "multiAttack") {
                 attackCount = 2;
-                this.logger.add(multiAttack.message);
+                logger.add(multiAttack.message);
             }
 
             if (darkRitual?.type === "dark_ritual") {
                 multiplier *= darkRitual.multiplier;
-                this.logger.add(darkRitual.message);
+                logger.add(darkRitual.message);
             }
 
             // NEW: Abyssal Devourer
@@ -1566,7 +1669,7 @@ class CombatEngine {
                 applyFear = abyssalDevourer.instantFear;
                 enhancedLifesteal = abyssalDevourer.lifesteal;
                 abyssalDevourerTriggered = true;
-                this.logger.add(abyssalDevourer.message);
+                logger.add(abyssalDevourer.message);
             }
         } catch (error) {
             console.error('Error checking skill activations:', error);
@@ -1575,13 +1678,45 @@ class CombatEngine {
         return { multiplier, attackCount, applyFear, enhancedLifesteal, elementalStormTriggered, abyssalDevourerTriggered };
     }
 
-    applyPotionEffects(damage, potionEffects, attackerName) {
+    applyPotionEffects(damage, potionEffects, attackerName, customLogger = null) {
+        const logger = customLogger || this.logger;
         try {
-            if (potionEffects.special?.ability === "shadow_strike" && 
-                Math.random() < (potionEffects.special.chance || 0.25)) {
-                damage *= 2;
-                this.logger.add(`🌑 **Shadow Strike!** ${attackerName} attacks from the shadows!`);
+            if (!potionEffects.special) return Math.floor(damage);
+            
+            const { ability, chance = 0.25 } = potionEffects.special;
+            
+            switch (ability) {
+                case "shadow_strike":
+                    if (Math.random() < chance) {
+                        damage *= 2;
+                        logger.add(`🌑 **Shadow Strike!** ${attackerName} attacks from the shadows!`);
+                    }
+                    break;
+                    
+                case "fear_strike":
+                    if (Math.random() < chance) {
+                        damage = Math.floor(damage * 1.5);
+                        logger.add(`😱 **Fear Strike!** ${attackerName} strikes with terror!`);
+                    }
+                    break;
+                    
+                case "weakness_detection":
+                    // This is handled via crit bonus in stats, but we can add extra damage here
+                    if (Math.random() < chance) {
+                        damage = Math.floor(damage * 1.3);
+                        logger.add(`💎 **Weakness Detected!** ${attackerName} finds a critical weakness!`);
+                    }
+                    break;
+                    
+                // Note: phase_dodge is defensive and handled in hit calculation
+                // multi_element is handled via damage boost
             }
+            
+            // Apply multi_element damage boost
+            if (potionEffects.multi_element?.damage_boost) {
+                damage = Math.floor(damage * (1 + potionEffects.multi_element.damage_boost / 100));
+            }
+            
         } catch (error) {
             console.error('Error applying potion effects:', error);
         }
@@ -1635,7 +1770,8 @@ class CombatEngine {
         return newHp; 
     }
 
-    logAttack(attackerName, attack, attackerType, defenderType, showDetails = true) {
+    logAttack(attackerName, attack, attackerType, defenderType, showDetails = true, customLogger = null) {
+        const logger = customLogger || this.logger;
         let message = `⚔️ **${attackerName}** attacks for **${attack.damage}** damage!`;
         
         if (showDetails) {
@@ -1652,10 +1788,11 @@ class CombatEngine {
             }
         }
         
-        this.logger.add(message);
+        logger.add(message);
     }
 
-    logEnemyAttack(attackerName, attack, attackerType, defenderType) {
+    logEnemyAttack(attackerName, attack, attackerType, defenderType, customLogger = null) {
+        const logger = customLogger || this.logger;
         let message = `⚔️ The **${attackerName}** retaliates for **${attack.damage}** damage!`;
         
         if (attack.typeMultiplier > 1) {
@@ -1667,7 +1804,7 @@ class CombatEngine {
             message += ` 💥 **Critical hit!**`;
         }
         
-        this.logger.add(message);
+        logger.add(message);
     }
 }
 

@@ -1,6 +1,6 @@
 const { createErrorEmbed, createSuccessEmbed, createWarningEmbed } = require('../../utils/embed');
 const Pet = require('../../models/Pet');
-const allPals = require('../../gamedata/pets');
+const GameData = require('../../utils/gameData');
 const config = require('../../config/config.json');
 
 module.exports = {
@@ -30,7 +30,7 @@ module.exports = {
 
             for (const pal of petsToUpdate) {
                 try {
-                    const basePalData = allPals[pal.basePetId];
+                    const basePalData = GameData.getPet(pal.basePetId);
                     if (basePalData && basePalData.type) {
                         pal.type = basePalData.type;
                         await pal.save();

@@ -60,7 +60,7 @@ require('./config/database');
 // some functions
 client.getPrefix = async (guildId) => {
   const data = await Config.findOne({ guildId });
-  return data?.prefix || "!"; 
+  return data?.prefix || ","; 
 };
 
 client.login(process.env.BOT_TOKEN).catch(console.error);

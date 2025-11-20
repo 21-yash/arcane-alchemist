@@ -4,6 +4,8 @@ const { createErrorEmbed, createSuccessEmbed, createWarningEmbed, createInfoEmbe
 const { grantPlayerXp } = require("../../utils/leveling");
 const GameData = require('../../utils/gameData');
 const { updateQuestProgress } = require('../../utils/questSystem');
+const CommandHelpers = require('../../utils/commandHelpers');
+const LabManager = require('../../utils/labManager');
 
 const activeBrewingSessions = new Set();
 
@@ -32,8 +34,9 @@ class BrewInputValidator {
      * @param {Object} player - Player object
      * @returns {Object} Validation result
      */
-    static parseBrewInput(input, player) {
+    static parseBrewInput(input, player, options = {}) {
         const sanitized = this.sanitizeInput(input);
+        const maxBatch = options.maxBatch || 1;
         
         if (!sanitized) {
             return {
@@ -49,10 +52,10 @@ class BrewInputValidator {
         const quantityMatch = inputText.match(/\s+x(\d+)$/i);
         if (quantityMatch) {
             brewQuantity = parseInt(quantityMatch[1]);
-            if (isNaN(brewQuantity) || brewQuantity < 1 || brewQuantity > 10) {
+            if (isNaN(brewQuantity) || brewQuantity < 1 || brewQuantity > maxBatch) {
                 return {
                     success: false,
-                    error: "Brew quantity must be a number between 1 and 10."
+                    error: `Brew quantity must be between 1 and ${maxBatch}.`
                 };
             }
             inputText = inputText.replace(/\s+x\d+$/i, '');
@@ -343,17 +346,15 @@ module.exports = {
                 });
             }
 
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({
-                    embeds: [
-                        createErrorEmbed(
-                            "No Adventure Started",
-                            `You haven't started your journey yet! Use \`${prefix}start\` to begin.`
-                        )
-                    ]
-                });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
+            const labContext = await LabManager.loadPlayerLab(player);
+            const labEffects = labContext.effects;
+            const lab = labContext.lab;
+            const maxBatch = LabManager.getMaxBrewBatch(labEffects);
 
             const ingredients = getPlayerIngredients(player);
             if (ingredients.length === 0) {
@@ -394,6 +395,7 @@ module.exports = {
              */
             const createCauldronEmbed = () => {
                 let description = `Enter ingredients in format: **quantity ingredient_name, quantity ingredient_name**\nExample: \`2 moonpetal_herb, 1 crystal_shard\`\n\nTo brew multiple potions, add **x[number]** at the end:\nExample: \`2 moonpetal_herb, 1 crystal_shard x3\`\n\n`;
+                description += `Max batch size: **${maxBatch}** potion${maxBatch === 1 ? '' : 's'} per brew.\n\n`;
 
                 // Show available recipes count
                 description += `📚 **Known Recipes:** ${availableRecipes.length}\n`;
@@ -402,7 +404,8 @@ module.exports = {
                     description += `\n**Selected Ingredients:**\n`;
                     Object.entries(selectedIngredients).forEach(([itemId, qty]) => {
                         const itemData = GameData.getItem(itemId);
-                        description += `> ${itemData.name} x${qty}\n`;
+                        const itemEmoji = CommandHelpers.getItemEmoji(itemId);
+                        description += `> ${itemEmoji} ${itemData.name} x${qty}\n`;
                     });
                     
                     if (brewQuantity > 1) {
@@ -410,7 +413,8 @@ module.exports = {
                         description += `\n**Total Ingredients Needed:**\n`;
                         Object.entries(selectedIngredients).forEach(([itemId, qty]) => {
                             const itemData = GameData.getItem(itemId);
-                            description += `> ${itemData.name} x${qty * brewQuantity}\n`;
+                            const itemEmoji = CommandHelpers.getItemEmoji(itemId);
+                            description += `> ${itemEmoji} ${itemData.name} x${qty * brewQuantity}\n`;
                         });
                     }
 
@@ -501,7 +505,7 @@ module.exports = {
                 }
 
                 // Parse and validate input
-                const parseResult = BrewInputValidator.parseBrewInput(m.content, player);
+                const parseResult = BrewInputValidator.parseBrewInput(m.content, player, { maxBatch });
                 
                 if (!parseResult.success) {
                     if (parseResult.error && parseResult.error.startsWith("Invalid format:")) {
@@ -573,7 +577,8 @@ module.exports = {
                                 recipesText += `\n**${resultItem.name}** (${recipe.result.quantity}x)\n`;
                                 recipesText += `Ingredients: ${recipe.ingredients.map(ing => {
                                     const item = GameData.getItem(ing.itemId);
-                                    return `${item.name} x${ing.quantity}`;
+                                    const itemEmoji = CommandHelpers.getItemEmoji(ing.itemId);
+                                    return `${itemEmoji} ${item.name} x${ing.quantity}`;
                                 }).join(', ')}\n`;
                             }
                         });
@@ -600,6 +605,14 @@ module.exports = {
                         // Find matching recipe
                         const matchResult = RecipeHandler.findMatchingRecipe(selectedIngredients, player);
 
+                        if (!matchResult.hasMatch) {
+                            await i.reply({
+                                embeds: [createErrorEmbed("No Recipe Match", "Those ingredients don't match any recipe you know.")],
+                                ephemeral: true
+                            });
+                            return;
+                        }
+
                         // Execute brewing
                         const brewResult = await this.executeBrewing(
                             player,
@@ -607,7 +620,8 @@ module.exports = {
                             brewQuantity,
                             matchResult,
                             client,
-                            message
+                            message,
+                            labEffects
                         );
 
                         await i.update({
@@ -678,7 +692,7 @@ module.exports = {
      * @param {Object} message - Discord message
      * @returns {Object} Brewing result
      */
-    async executeBrewing(player, ingredients, brewQuantity, matchResult, client, message) {
+    async executeBrewing(player, ingredients, brewQuantity, matchResult, client, message, labEffects = null) {
         try {
             if (matchResult.hasMatch) {
                 // Successful brewing
@@ -690,7 +704,8 @@ module.exports = {
 
                 // Grant XP
                 const totalXp = recipe.xp * brewQuantity;
-                await grantPlayerXp(client, message, player, totalXp);
+                await grantPlayerXp(client, message, player.userId, totalXp, { labEffects });
+                let newlyDiscoveredRecipe = null;
 
                 // Ensure recipe is in grimoire (should already be there)
                 if (!player.grimoire.includes(recipeId)) {
@@ -705,8 +720,28 @@ module.exports = {
                     }
                 });
 
+                if (labEffects?.ingredientSaveChance) {
+                    recipe.ingredients.forEach(ing => {
+                        if (Math.random() < labEffects.ingredientSaveChance) {
+                            const playerItem = player.inventory.find(item => item.itemId === ing.itemId);
+                            if (playerItem) {
+                                playerItem.quantity += ing.quantity * brewQuantity;
+                            } else {
+                                player.inventory.push({
+                                    itemId: ing.itemId,
+                                    quantity: ing.quantity * brewQuantity
+                                });
+                            }
+                        }
+                    });
+                }
+
                 // Add result items
-                const totalResultQuantity = recipe.result.quantity * brewQuantity;
+                let totalResultQuantity = recipe.result.quantity * brewQuantity;
+                if (labEffects?.brewingSuccessBonus) {
+                    const bonusMultiplier = 1 + labEffects.brewingSuccessBonus;
+                    totalResultQuantity = Math.max(recipe.result.quantity, Math.round(totalResultQuantity * bonusMultiplier));
+                }
                 const resultItem = player.inventory.find(item => item.itemId === recipe.result.itemId);
                 
                 if (resultItem) {
@@ -721,6 +756,10 @@ module.exports = {
                 // Clean up empty inventory slots
                 player.inventory = player.inventory.filter(item => item.quantity > 0);
 
+                if (labEffects?.recipeDiscoveryChance && Math.random() < labEffects.recipeDiscoveryChance) {
+                    newlyDiscoveredRecipe = discoverNewBrewingRecipe(player, labEffects?.advancedRecipesUnlocked);
+                }
+
                 await player.save();
 
                 // Emit events
@@ -734,6 +773,9 @@ module.exports = {
                 
                 if (brewQuantity > 1) {
                     successMsg += ` (${brewQuantity} batches)`;
+                }
+                if (newlyDiscoveredRecipe) {
+                    successMsg += `\n\n📘 You discovered a new recipe: **${newlyDiscoveredRecipe}**!`;
                 }
 
                 return {
@@ -780,3 +822,33 @@ module.exports = {
         }
     }
 };
+
+function discoverNewBrewingRecipe(player, allowAdvanced = false) {
+    const allRecipes = GameData.recipes || {};
+    const unknown = Object.entries(allRecipes).filter(([recipeId, recipeData]) => {
+        if (!recipeData?.result?.itemId) return false;
+        const item = GameData.getItem(recipeData.result.itemId);
+        if (!item || item.source !== 'brewing') return false;
+        if (!allowAdvanced && isAdvancedRecipe(recipeData)) {
+            return false;
+        }
+        return !player.grimoire.includes(recipeId);
+    });
+
+    if (!unknown.length) {
+        return null;
+    }
+
+    const [recipeId, recipeData] = unknown[Math.floor(Math.random() * unknown.length)];
+    player.grimoire.push(recipeId);
+    player.markModified?.('grimoire');
+    const itemData = GameData.getItem(recipeData.result.itemId);
+    return itemData?.name || recipeId;
+}
+
+function isAdvancedRecipe(recipeData) {
+    const item = GameData.getItem(recipeData.result.itemId);
+    if (!item) return false;
+    const highRarity = item.rarity && ['Epic', 'Legendary'].includes(item.rarity);
+    return highRarity || recipeData.level >= 10;
+}

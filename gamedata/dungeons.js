@@ -17,11 +17,9 @@ module.exports = {
                 { itemId: 'beast_hide', baseChance: 0.3, quantityRange: [1, 2] }
             ],
             eggTable: [
-                { itemId: 'common_beast_egg', chance: 0.15 },
-                { itemId: 'common_mystic_egg', chance: 0.12 },
-                { itemId: 'common_undead_egg', chance: 0.08 },
-                { itemId: 'uncommon_beast_egg', chance: 0.04 },
-                { itemId: 'uncommon_mystic_egg', chance: 0.03 }
+                { itemId: 'beast_egg', chance: 0.19 },
+                { itemId: 'mystic_egg', chance: 0.15 },
+                { itemId: 'undead_egg', chance: 0.08 }
             ]
         },
         scaleFactors: { gold: 1.05, xp: 1.04, lootChance: 1.02 },
@@ -48,11 +46,9 @@ module.exports = {
 
             ],
             eggTable: [
-                { itemId: 'common_undead_egg', chance: 0.12 },
-                { itemId: 'common_mechanical_egg', chance: 0.10 },
-                { itemId: 'uncommon_undead_egg', chance: 0.08 },
-                { itemId: 'uncommon_mechanical_egg', chance: 0.06 },
-                { itemId: 'uncommon_elemental_egg', chance: 0.05 }
+                { itemId: 'undead_egg', chance: 0.2 },
+                { itemId: 'mechanical_egg', chance: 0.16 },
+                { itemId: 'elemental_egg', chance: 0.05 }
             ]
         },
         scaleFactors: { gold: 1.06, xp: 1.05, lootChance: 1.03 },
@@ -77,12 +73,9 @@ module.exports = {
                 { itemId: 'lava_gem', baseChance: 0.3, quantityRange: [1, 1] }
             ],
             eggTable: [
-                { itemId: 'common_elemental_egg', chance: 0.15 },
-                { itemId: 'uncommon_elemental_egg', chance: 0.12 },
-                { itemId: 'uncommon_beast_egg', chance: 0.08 },
-                { itemId: 'rare_beast_egg', chance: 0.05 },
-                { itemId: 'rare_mechanical_egg', chance: 0.04 },
-                { itemId: 'epic_elemental_egg', chance: 0.02 },
+                { itemId: 'elemental_egg', chance: 0.29 },
+                { itemId: 'beast_egg', chance: 0.13 },
+                { itemId: 'mechanical_egg', chance: 0.04 },
                 { itemId: 'hybrid_beast_egg', chance: 0.01 }
             ]
         },
@@ -110,10 +103,8 @@ module.exports = {
                 { itemId: 'spirit_dust', baseChance: 0.1, quantityRange: [1, 1] }
             ],
             eggTable: [
-                { itemId: 'uncommon_mystic_egg', chance: 0.15 },
-                { itemId: 'uncommon_undead_egg', chance: 0.10 },
-                { itemId: 'rare_mystic_egg', chance: 0.06 },
-                { itemId: 'epic_undead_egg', chance: 0.03 }
+                { itemId: 'mystic_egg', chance: 0.21 },
+                { itemId: 'undead_egg', chance: 0.13 }
             ]
         },
         scaleFactors: { gold: 1.07, xp: 1.06, lootChance: 1.03 },
@@ -138,11 +129,8 @@ module.exports = {
                 { itemId: 'frost_shard', baseChance: 0.35, quantityRange: [1, 1] }
             ],
             eggTable: [
-                { itemId: 'uncommon_elemental_egg', chance: 0.10 },
-                { itemId: 'uncommon_beast_egg', chance: 0.08 },
-                { itemId: 'rare_beast_egg', chance: 0.05 },
-                { itemId: 'epic_elemental_egg', chance: 0.03 },
-                { itemId: 'legendary_beast_egg', chance: 0.002 }
+                { itemId: 'elemental_egg', chance: 0.13 },
+                { itemId: 'beast_egg', chance: 0.132 }
             ]
         },
         scaleFactors: { gold: 1.07, xp: 1.06, lootChance: 1.03 },
@@ -168,11 +156,10 @@ module.exports = {
                 { itemId: 'dragon_scale', baseChance: 0.1, quantityRange: [1, 1] }
             ],
             eggTable: [
-                { itemId: 'rare_mechanical_egg', chance: 0.08 },
-                { itemId: 'epic_elemental_egg', chance: 0.06 },
-                { itemId: 'rare_mystic_egg', chance: 0.05 },
-                { itemId: 'legendary_mechanical_egg', chance: 0.004 },
-                { itemId: 'legendary_elemental_egg', chance: 0.003 }
+                { itemId: 'mechanical_egg', chance: 0.084 },
+                { itemId: 'elemental_egg', chance: 0.063 },
+                { itemId: 'mystic_egg', chance: 0.05 },
+                { itemId: 'aeonic_egg', chance: 0.02 }
             ]
         },
         scaleFactors: { gold: 1.08, xp: 1.07, lootChance: 1.04 },
@@ -199,11 +186,11 @@ module.exports = {
                 { itemId: 'fire_bloom', baseChance: 0.1, quantityRange: [1, 1] }
             ],
             eggTable: [
-                { itemId: 'rare_beast_egg', chance: 0.12 },
-                { itemId: 'epic_elemental_egg', chance: 0.10 },
-                { itemId: 'epic_undead_egg', chance: 0.06 },
-                { itemId: 'legendary_mystic_egg', chance: 0.004 },
-                { itemId: 'legendary_undead_egg', chance: 0.004 },
+                { itemId: 'beast_egg', chance: 0.12 },
+                { itemId: 'elemental_egg', chance: 0.10 },
+                { itemId: 'undead_egg', chance: 0.064 },
+                { itemId: 'mystic_egg', chance: 0.004 },
+                { itemId: 'abyssal_egg', chance: 0.025 }
             ]
         },
         scaleFactors: { gold: 1.08, xp: 1.07, lootChance: 1.04 },

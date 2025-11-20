@@ -3,8 +3,8 @@ const Player = require('../../models/Player');
 const Pet = require('../../models/Pet');
 const SkillTree = require('../../models/SkillTree');
 const { createErrorEmbed, createSuccessEmbed, createInfoEmbed, createCustomEmbed } = require('../../utils/embed');
-const allPals = require('../../gamedata/pets');
-const skillTrees = require('../../gamedata/skillTrees');
+const GameData = require('../../utils/gameData');
+const CommandHelpers = require('../../utils/commandHelpers');
 
 module.exports = {
     name: 'skills',
@@ -12,12 +12,11 @@ module.exports = {
     aliases: ['skill', 'tree'],
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({
-                    embeds: [createErrorEmbed('No Adventure Started', `You haven't started your journey yet! Use \`${prefix}start\` to begin.`)]
-                });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
 
             if (!args[0]) {
                 return message.reply({
@@ -46,8 +45,8 @@ module.exports = {
                 });
             }
 
-            const palData = allPals[pal.basePetId];
-            const typeSkills = skillTrees[palData.type];
+            const palData = GameData.getPet(pal.basePetId);
+            const typeSkills = GameData.getSkillTree(palData.type);
             
             if (!typeSkills) {
                 return message.reply({
@@ -225,10 +224,10 @@ module.exports = {
         Object.entries(bonus).forEach(([key, value]) => {
             switch (key) {
                 case 'atkMultiplier':
-                    effects.push(`+${Math.round((value - 1) * 100)}% Attack`);
+                    effects.push(`+${Math.round(value * 100)}% Attack`);
                     break;
                 case 'magicDamage':
-                    effects.push(`+${Math.round((value - 1) * 100)}% Magic Damage`);
+                    effects.push(`${Math.round((value - 1) * 100)}% Attack Boost`);
                     break;
                 case 'defBonus':
                     effects.push(`+${value} Defense`);
@@ -256,9 +255,6 @@ module.exports = {
                     break;
                 case 'accuracy':
                     effects.push(`+${Math.round((value - 1) * 100)}% Accuracy`);
-                    break;
-                case 'manaEfficiency':
-                    effects.push(`${Math.round((1 - value) * 100)}% Mana Cost Reduction`);
                     break;
                 case 'statusResistance':
                     if (typeof value === 'object') {
@@ -297,6 +293,9 @@ module.exports = {
                     break;
                 case 'executeThreshold':
                     effects.push(`Execute at ${Math.round(value * 100)}% HP`);
+                    break;
+                case 'executeMultiplier':
+                    effects.push(`${value}x Execute Damage`);
                     break;
                 case 'powerBonus':
                     effects.push(`+${Math.round((value - 1) * 100)}% Power`);
@@ -351,6 +350,60 @@ module.exports = {
                     break;
                 case 'immuneToStatus':
                     effects.push('Immune to Status Effects');
+                    break;
+                case 'enemyAtkDown':
+                    effects.push(`-${Math.round(value * 100)}% Enemy Attack`);
+                    break;
+                case 'enemySpdDown':
+                    effects.push(`-${Math.round(value * 100)}% Enemy Speed`);
+                    break;
+                case 'dotDamage':
+                    effects.push(`${Math.round(value * 100)}% DoT Damage`);
+                    break;
+                case 'drownChance':
+                    effects.push(`${Math.round(value * 100)}% Drown Chance`);
+                    break;
+                case 'fearChance':
+                    effects.push(`${Math.round(value * 100)}% Fear Chance`);
+                    break;
+                case 'defReduction':
+                    effects.push(`${Math.round(value * 100)}% Defense Reduction`);
+                    break;
+                case 'silenceChance':
+                    effects.push(`${Math.round(value * 100)}% Silence Chance`);
+                    break;
+                case 'areaDamage':
+                    effects.push(`${value}x Area Damage`);
+                    break;
+                case 'instantFear':
+                    effects.push('Instant Fear');
+                    break;
+                case 'abyssalChance':
+                    effects.push(`${Math.round(value * 100)}% Abyssal Trigger`);
+                    break;
+                case 'echoChance':
+                    effects.push(`${Math.round(value * 100)}% Echo Chance`);
+                    break;
+                case 'echoDamageMultiplier':
+                    effects.push(`${Math.round(value * 100)}% Echo Damage`);
+                    break;
+                case 'damageImmunity':
+                    effects.push(`${value} Turn Immunity`);
+                    break;
+                case 'recoilPercent':
+                    effects.push(`${Math.round(value * 100)}% Recoil`);
+                    break;
+                case 'paradoxChance':
+                    effects.push(`${Math.round(value * 100)}% Paradox Chance`);
+                    break;
+                case 'shieldChance':
+                    effects.push(`${Math.round(value * 100)}% Shield Chance`);
+                    break;
+                case 'stormChance':
+                    effects.push(`${Math.round(value * 100)}% Storm Chance`);
+                    break;
+                case 'chance':
+                    effects.push(`${Math.round(value * 100)}% Activation Chance`);
                     break;
                 default:
                     effects.push(`${key}: ${value}`);

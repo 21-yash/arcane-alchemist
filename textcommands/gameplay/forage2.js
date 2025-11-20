@@ -3,13 +3,12 @@ const Player = require('../../models/Player');
 const Pet = require('../../models/Pet');
 const { createErrorEmbed, createSuccessEmbed, createInfoEmbed, createWarningEmbed } = require('../../utils/embed');
 const { restoreStamina } = require('../../utils/stamina');
-const allBiomes = require('../../gamedata/biomes');
-const allItems = require('../../gamedata/items');
-const allPals = require('../../gamedata/pets');
+const GameData = require('../../utils/gameData');
 const config = require('../../config/config.json');
 const { grantPlayerXp } = require('../../utils/leveling');
 const cooldowns = new Map();
 const { updateQuestProgress } = require('../../utils/questSystem');
+const LabManager = require('../../utils/labManager');
 
 // Foraging events system
 const forageEvents = {
@@ -254,6 +253,8 @@ module.exports = {
                 });
             }
 
+            const { effects: labEffects } = await LabManager.loadPlayerLab(player);
+
             // Determine biome
             let biomeId;
             if (args.length > 0) {
@@ -261,12 +262,12 @@ module.exports = {
             } else if (player.preferences?.selectedBiome) {
                 biomeId = player.preferences.selectedBiome;
             } else {
-                biomeId = Object.keys(allBiomes)[0];
+                biomeId = Object.keys(GameData.biomes)[0];
             }
             
-            const biome = allBiomes[biomeId];
+            const biome = GameData.getBiome(biomeId);
             if (!biome) {
-                const availableBiomes = Object.values(allBiomes).map(b => `\`${b.name}\``).join(', ');
+                const availableBiomes = Object.values(GameData.biomes).map(b => `\`${b.name}\``).join(', ');
                 return message.reply({ 
                     embeds: [createErrorEmbed('Invalid Biome', `That biome does not exist. Available biomes: ${availableBiomes}`)] 
                 });
@@ -278,7 +279,7 @@ module.exports = {
                 });
             }
 
-            player = await restoreStamina(player);
+            player = await restoreStamina(player, labEffects);
 
             if (player.stamina < biome.staminaCost) {
                 const staminaNeeded = biome.staminaCost - player.stamina;
@@ -333,6 +334,7 @@ module.exports = {
             
             for (const lootItem of biome.lootTable) {
                 let chance = lootItem.chance * lootMultiplier;
+                chance *= 1 + (labEffects?.rareItemChanceBonus || 0);
                 
                 // Guaranteed rare item from certain events
                 if (selectedEvent.guaranteedRare && lootItem.chance <= 0.1) {
@@ -341,7 +343,8 @@ module.exports = {
                 
                 if (Math.random() < chance) {
                     const baseQuantity = Math.floor(Math.random() * (lootItem.quantityRange[1] - lootItem.quantityRange[0] + 1)) + lootItem.quantityRange[0];
-                    const quantity = Math.max(1, Math.floor(baseQuantity * lootMultiplier));
+                    const quantityMultiplier = lootMultiplier * (1 + (labEffects?.forageYieldBonus || 0));
+                    const quantity = Math.max(1, Math.floor(baseQuantity * quantityMultiplier));
                     foundLoot.push({ itemId: lootItem.itemId, quantity });
                 }
             }
@@ -355,7 +358,8 @@ module.exports = {
             }
 
             if (selectedEvent.bonusGold) {
-                const goldBonus = Math.floor(Math.random() * (selectedEvent.bonusGold[1] - selectedEvent.bonusGold[0] + 1)) + selectedEvent.bonusGold[0];
+                const baseGold = Math.floor(Math.random() * (selectedEvent.bonusGold[1] - selectedEvent.bonusGold[0] + 1)) + selectedEvent.bonusGold[0];
+                const goldBonus = LabManager.applyGoldBonus(baseGold, labEffects);
                 player.gold += goldBonus;
                 eventDescription += `\n*You found an extra **${goldBonus} gold** tucked away!* \n`;
             }
@@ -375,7 +379,7 @@ module.exports = {
                         player.inventory.push({ itemId: loot.itemId, quantity: loot.quantity });
                     }
                     
-                    const itemData = allItems[loot.itemId];
+                    const itemData = GameData.getItem(loot.itemId);
                     const rarity = loot.quantity > 1 ? '' : (itemData?.rarity === 'rare' || itemData?.rarity === 'epic' || itemData?.rarity === 'legendary') ? ' ✨' : '';
                     lootDescription += `+ **${loot.quantity}x** ${itemData?.name || loot.itemId}${rarity}\n`;
                 });
@@ -411,7 +415,7 @@ module.exports = {
             
             // Grant XP
             const baseXp = biome.staminaCost + (selectedEvent.xpBonus || 0);
-            grantPlayerXp(client, message, message.author.id, baseXp);
+            grantPlayerXp(client, message, message.author.id, baseXp, { labEffects });
             
             // Update quest progress
             await updateQuestProgress(message.author.id, 'forage_times', 1);
@@ -439,7 +443,7 @@ module.exports = {
                     }
                     
                     if (Math.random() < encounterChance) {
-                        encounteredPalInfo = { ...allPals[pal.palId], id: pal.palId };
+                        encounteredPalInfo = { ...GameData.getPet(pal.palId), id: pal.palId };
                         break;
                     }
                 }
@@ -506,7 +510,7 @@ module.exports = {
                             embeds: [createSuccessEmbed('Tamed!', `<@${message.author.id}> You successfully tamed the **${encounteredPalInfo.name}**! It has been added to your collection.`)],
                             components: []
                         });
-                        grantPlayerXp(client, message, message.author.id, 20);
+                        grantPlayerXp(client, message, message.author.id, 20, { labEffects });
                         return collector.stop();
                     }
                 });
@@ -521,12 +525,15 @@ module.exports = {
                 });
             }
 
-            const expirationTime = Date.now() + 10000;
+            const baseCooldown = 10000;
+            const cooldownReduction = Math.min((labEffects?.forageCooldownReduction || 0) + (labEffects?.globalCooldownReduction || 0), 0.9);
+            const cooldownDuration = baseCooldown * (1 - cooldownReduction);
+            const expirationTime = Date.now() + cooldownDuration;
             cooldowns.set(message.author.id, expirationTime);
 
             setTimeout(() => {
                 cooldowns.delete(message.author.id);
-            }, 10 * 1000);
+            }, cooldownDuration);
 
         } catch (error) {
             console.error('Forage command error:', error);

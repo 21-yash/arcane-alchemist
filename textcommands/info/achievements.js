@@ -1,9 +1,9 @@
 
 const Player = require('../../models/Player');
 const { createErrorEmbed, createCustomEmbed } = require('../../utils/embed');
-const { getMember } = require('../../utils/functions');
-const allAchievements = require('../../gamedata/achievement');
+const GameData = require('../../utils/gameData');
 const { ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
+const CommandHelpers = require('../../utils/commandHelpers');
 
 const ACHIEVEMENTS_PER_PAGE = 6;
 
@@ -14,19 +14,20 @@ module.exports = {
     aliases: ['ach', 'trophy', 'achievement'],
     async execute(message, args, client, prefix) {
         try {
-            // Use the getMember utility to find the target user, defaulting to the author
-            const member = getMember(message, args.join(' ')) || message.member;
+            // Get target member (self or mentioned user)
+            const member = await CommandHelpers.getMemberFromMessage(message, args.join(' ')) || message.member;
 
-            const player = await Player.findOne({ userId: member.id });
-            if (!player) {
+            const playerResult = await CommandHelpers.validatePlayer(member.id, prefix);
+            if (!playerResult.success) {
                 const notStartedMsg = member.id === message.author.id 
                     ? `You haven't started your journey yet! Use \`${prefix}start\` to begin.`
                     : `**${member.displayName}** has not started their alchemical journey yet.`;
                 return message.reply({ embeds: [createErrorEmbed('No Adventure Started', notStartedMsg)] });
             }
+            const player = playerResult.player;
 
-            const unlockedAchievements = allAchievements.filter(ach => player.achievements.includes(ach.id));
-            const lockedAchievements = allAchievements.filter(ach => !player.achievements.includes(ach.id));
+            const unlockedAchievements = GameData.achievement.filter(ach => player.achievements.includes(ach.id));
+            const lockedAchievements = GameData.achievement.filter(ach => !player.achievements.includes(ach.id));
 
             let currentPage = 0;
             let showingUnlocked = true;
@@ -62,7 +63,7 @@ module.exports = {
                     showUnlocked ? '#FFD700' : '#808080',
                     {
                         footer: {
-                            text: `${showUnlocked ? 'Unlocked' : 'Locked'} Achievements | Page ${page + 1}/${Math.max(totalPages, 1)} | Total: ${player.achievements.length}/${allAchievements.length}`
+                            text: `${showUnlocked ? 'Unlocked' : 'Locked'} Achievements | Page ${page + 1}/${Math.max(totalPages, 1)} | Total: ${player.achievements.length}/${GameData.achievement.length}`
                         }
                     }
                 );

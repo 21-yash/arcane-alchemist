@@ -154,19 +154,18 @@ module.exports = {
             ctx.fillText(formatNumber(player.gold), 145, 345);
             
             try {
-                const dustIcon = await loadImage(path.join(process.cwd(), 'assets/icons/dust.png'));
+                const dustIcon = await loadImage(path.join(process.cwd(), 'assets/icons/arcane_dust.png'));
                 ctx.drawImage(dustIcon, 300, 310, 50, 50);
             } catch (err) { console.error(`Failed to load dust icon: ${err.message}`); }
 
             ctx.fillText(formatNumber(player.arcaneDust), 365, 345);
 
             // --- Journey Started ---
-            ctx.fillStyle = '#AAAAAA';
-            ctx.font = '22px Lato';
             ctx.textAlign = 'right';
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.font = '16px Lato';
             const journeyDate = player.startedAt || player.createdAt;
-            ctx.fillText(`Journey Started: ${formatDate(journeyDate)}`, 820, 345);
-
+            ctx.fillText(`Journey Started: ${formatDate(journeyDate)}`, width - 20, height - 20);
 
             // --- Divider ---
             ctx.strokeStyle = '#444444';
@@ -186,9 +185,9 @@ module.exports = {
                 }
             };
             
-            const palIcon = await loadIcon('assets/icons/pal.png');
-            const dungeonIcon = await loadIcon('assets/icons/dungeon.png');
-            const craftIcon = await loadIcon('assets/icons/craft.png');
+            const palIcon = await loadIcon('assets/images/forest_rabbit.png');
+            const dungeonIcon = await loadIcon('assets/images/dungeon_sunken_crypts.png');
+            const craftIcon = await loadIcon('assets/icons/crafting.png');
             
             const stats = [
                 { icon: palIcon, label: 'Pals Owned', value: palsOwnedCount },
@@ -203,7 +202,7 @@ module.exports = {
             stats.forEach((stat, index) => {
                 const x = statXStart + (index * statSpacing);
                 if (stat.icon) {
-                    ctx.drawImage(stat.icon, x - 30, statY - 40, 60, 60);
+                    ctx.drawImage(stat.icon, x - 15, statY - 60, 60, 60);
                 }
                 
                 ctx.fillStyle = '#FFFFFF';

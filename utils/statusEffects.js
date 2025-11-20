@@ -126,7 +126,7 @@ class StatusEffectManager {
         };
         
         if (effect.statDebuffStacking) {
-            newEffect.stacks = 0;
+            newEffect.stacks = 1;
         }
         
         creature.statusEffects.push(newEffect);
@@ -187,10 +187,24 @@ class StatusEffectManager {
             // Handle stacking debuffs like Decay
             if (statusData.statDebuffStacking) {
                 const { stat, multiplierPerTurn, maxStacks } = statusData.statDebuffStacking;
+                
+                // Store original value BEFORE modification
+                const originalStat = modifiedStats[stat];
+                
+                // Apply debuff
                 const totalDebuff = 1 + (multiplierPerTurn * effect.stacks);
                 modifiedStats[stat] = Math.floor(modifiedStats[stat] * totalDebuff);
-                battleLog.push(`${statusData.emoji} **${creature.name || creature.nickname}**'s defense is decaying! (${effect.stacks} stacks)`);
-                // Increment stacks for the next turn
+                
+                // Calculate actual reduction
+                const reduction = originalStat - modifiedStats[stat];
+                
+                // Show detailed message with before/after and reduction
+                battleLog.push(
+                    `${statusData.emoji} **${creature.name || creature.nickname}**'s defense is decaying! ` +
+                    `(Stack ${effect.stacks}/${maxStacks}: DEF ${originalStat} → ${modifiedStats[stat]} [-${reduction}])`
+                );
+                
+                // Increment stacks for the next turn (capped at maxStacks)
                 if (effect.stacks < maxStacks) {
                     effect.stacks++;
                 }

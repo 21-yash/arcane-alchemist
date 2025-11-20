@@ -59,6 +59,12 @@ const GameData = {
         }
         return gameCache.get("labUpgrades");
     },
+    get quests() {
+        if (!gameCache.has('quests')) {
+            throw new Error('Quests data not loaded');
+        }
+        return gameCache.get("quests");
+    },
 
     // Helper functions for common operations
     getItem(itemId) {
@@ -99,6 +105,11 @@ const GameData = {
     getAchievement(achievementId) {
         const achievements = this.achievement;
         return achievements.find((a) => a.id === achievementId) || null;
+    },
+
+    getQuest(questId) {
+        const quests = this.quests;
+        return quests[questId] || null;
     },
 
     // Search functions

@@ -1,10 +1,10 @@
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const Player = require('../../models/Player');
 const Pet = require('../../models/Pet');
-const allPals = require('../../gamedata/pets');
+const GameData = require('../../utils/gameData');
 const { createErrorEmbed } = require('../../utils/embed');
 const SkillTree = require('../../models/SkillTree');
-
+const config = require('../../config/config.json');
 
 module.exports = {
     name: 'start',
@@ -21,7 +21,7 @@ module.exports = {
             }
 
             // --- 2. Get the list of available starter Pals ---
-            const starterPals = Object.entries(allPals)
+            const starterPals = Object.entries(GameData.pets)
                 .filter(([id, pal]) => pal.rarity === 'Common')
                 .map(([id, pal]) => ({ id, ...pal }));
 
@@ -70,7 +70,7 @@ module.exports = {
 
             collector.on('collect', async (selectInteraction) => {
                 const chosenPalId = selectInteraction.values[0];
-                const chosenPalData = allPals[chosenPalId];
+                const chosenPalData = GameData.getPet(chosenPalId);
 
                 // --- Create Confirmation Embed and Buttons ---
                 const confirmationEmbed = new EmbedBuilder()
@@ -169,11 +169,13 @@ module.exports = {
 // Helper function to assign emojis to Pal types
 function getEmojiForType(type) {
     switch (type) {
-        case 'Beast': return '🐾';
-        case 'Elemental': return '🔥';
-        case 'Mystic': return '✨';
-        case 'Undead': return '💀';
-        case 'Mechanical': return '🤖';
+        case 'Beast': return config.emojis['Forest Rabbit'];
+        case 'Elemental': return config.emojis['Flame Sprite'];
+        case 'Mystic': return config.emojis['Sproutling'];
+        case 'Undead': return config.emojis['Skeletal Rat'];
+        case 'Mechanical': return config.emojis['Gear Pup'];
+        case 'Aeonic': return config.emojis['Dustwing Moth'];
+        case 'Abyssal': return config.emojis['Void Mite'];
         default: return '❓';
     }
 }

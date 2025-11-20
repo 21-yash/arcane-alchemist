@@ -1,18 +1,20 @@
 const { createErrorEmbed, createWarningEmbed, createCustomEmbed, createArgEmbed } = require('../../utils/embed');
 const Player = require('../../models/Player');
 const Pet = require('../../models/Pet');
-const allItems = require('../../gamedata/items');
-const allPals = require('../../gamedata/pets');
+const GameData = require('../../utils/gameData');
+const CommandHelpers = require('../../utils/commandHelpers');
 
-function formatEquipmentLine(pal, slotName) {
+async function formatEquipmentLine(pal, slotName) {
     const itemId = pal.equipment[slotName];
+    const itemEmoji = CommandHelpers.getItemEmoji(itemId);
+    
     if (!itemId) {
-        return '*(None)*';
+        return '*Empty*';
     }
 
-    const itemData = allItems[itemId];
+    const itemData = GameData.getItem(itemId);
     if (!itemData) {
-        return `*Unknown Item (${itemId})*`;
+        return `${itemEmoji} *Unknown Item (${itemId})*`;
     }
 
     const statStrings = [];
@@ -27,7 +29,11 @@ function formatEquipmentLine(pal, slotName) {
         }
     }
 
-    return `**${itemData.name}**\n> ${statStrings.join(' | ') || 'No stat boosts'}`;
+    const statsDisplay = statStrings.length > 0 
+        ? `\n${statStrings.join(' • ')}` 
+        : '';
+
+    return `${itemEmoji} **${itemData.name}**${statsDisplay}`;
 }
 
 module.exports = {
@@ -37,12 +43,11 @@ module.exports = {
     aliases: ['equipments', 'gear'],
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({ embeds: [
-                    createErrorEmbed('No Adventure Started!', `You haven't started your journey yet! Use \`${prefix}start\` to begin.`)
-                ]});
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
             if (!args[0]) {
                 return message.reply({ embeds: [
                     createArgEmbed(prefix, this.name, this.usage)
@@ -50,36 +55,64 @@ module.exports = {
             }
 
             const shortId = parseInt(args[0]);
-            if (isNaN(shortId)) {
-                return message.reply({ embeds: [
-                    createWarningEmbed('Invalid ID', `The ID of the Pal must be a valid number. Use \`${prefix}pet\` to check your Pal IDs.`)
-                ]});
-            }
 
-            const pal = await Pet.findOne({ shortId, ownerId: message.author.id });
-            if (!pal) {
-                return message.reply({ embeds: [
-                    createWarningEmbed('Pal Not Found', `Could not find a Pal with ID **#${shortId}** in your collection.`)
-                ]});
+            const petResult = await CommandHelpers.validatePet(message.author.id, shortId, prefix);
+            if (!petResult.success) {
+                return message.reply({ embeds: [petResult.embed] });
             }
+            const pal = petResult.pet;
 
-            // --- Create the embed with detailed fields ---
+            // Get pet base data for thumbnail
+            const basePetData = GameData.getPet(pal.basePetId);
+
+            // --- Create the embed with mobile-friendly layout ---
             const equipmentEmbed = createCustomEmbed(
-                `Equipment for ${pal.nickname}`,
-                `Showing all items currently equipped by **${pal.nickname}** (ID: ${pal.shortId}).`,
-                '#839192',
+                `${pal.nickname}'s Equipment`,
+                `Viewing equipment for **${pal.nickname}** (ID: ${pal.shortId})`,
+                '#5865F2',
                 {
-                    thumbnail: allPals[pal.basePetId]?.pic || message.author.displayAvatarURL(),
+                    thumbnail: basePetData?.pic || message.author.displayAvatarURL(),
                     fields: [
-                        { name: '⚔️ Weapon', value: formatEquipmentLine(pal, 'weapon'), inline: true },
-                        { name: '🛡️ Offhand', value: formatEquipmentLine(pal, 'offhand'), inline: true },
-                        { name: '⛑️ Head', value: formatEquipmentLine(pal, 'head'), inline: true },
-                        { name: '👚 Chest', value: formatEquipmentLine(pal, 'chest'), inline: true },
-                        { name: '👖 Leggings', value: formatEquipmentLine(pal, 'leg'), inline: true },
-                        { name: '👟 Boots', value: formatEquipmentLine(pal, 'boots'), inline: true },
-                        { name: '💍 Accessory', value: formatEquipmentLine(pal, 'accessory'), inline: true }
+                        { 
+                            name: '• Weapon', 
+                            value: await formatEquipmentLine(pal, 'weapon'), 
+                            inline: false 
+                        },
+                        { 
+                            name: '• Offhand', 
+                            value: await formatEquipmentLine(pal, 'offhand'), 
+                            inline: false 
+                        },
+                        { 
+                            name: '• Head', 
+                            value: await formatEquipmentLine(pal, 'head'), 
+                            inline: false 
+                        },
+                        { 
+                            name: '• Chest', 
+                            value: await formatEquipmentLine(pal, 'chest'), 
+                            inline: false 
+                        },
+                        { 
+                            name: '• Leggings', 
+                            value: await formatEquipmentLine(pal, 'leg'), 
+                            inline: false 
+                        },
+                        { 
+                            name: '• Boots', 
+                            value: await formatEquipmentLine(pal, 'boots'), 
+                            inline: false 
+                        },
+                        { 
+                            name: '• Accessory', 
+                            value: await formatEquipmentLine(pal, 'accessory'), 
+                            inline: false 
+                        }
                     ],
-                    footer: { text: `Owner: ${message.author.username}`, iconURL: message.author.displayAvatarURL() }
+                    footer: { 
+                        text: `Owner: ${message.author.username}`, 
+                        iconURL: message.author.displayAvatarURL() 
+                    }
                 }
             );
 

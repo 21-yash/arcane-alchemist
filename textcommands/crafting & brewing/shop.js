@@ -11,8 +11,10 @@ const {
     createSuccessEmbed,
     createCustomEmbed,
 } = require("../../utils/embed");
-const allItems = require("../../gamedata/items");
+const GameData = require("../../utils/gameData");
 const config = require("../../config/config.json");
+const CommandHelpers = require("../../utils/commandHelpers");
+const LabManager = require('../../utils/labManager');
 
 // --- Shop Configuration ---
 const SHOP_CONFIG = {
@@ -323,17 +325,13 @@ module.exports = {
     description: "Visit the shop to spend your Arcane Dust on ingredients and Gold on recipe scrolls.",
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({
-                    embeds: [
-                        createErrorEmbed(
-                            "No Adventure Started",
-                            `You haven't started your journey yet! Use \`${prefix}start\` to begin.`,
-                        ),
-                    ],
-                });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
+            const labContext = await LabManager.loadPlayerLab(player);
+            const labEffects = labContext.effects;
 
             const dailyDeals = getDailyDeals();
             const dailyScrolls = getDailyScrolls();
@@ -343,11 +341,11 @@ module.exports = {
             shopDescription += "**📜 Daily Ingredients** *(Arcane Dust)*\n";
 
             dailyDeals.forEach((itemId) => {
-                const item = allItems[itemId];
-                const price = Math.floor(
-                    (item.rarity === "Common" ? 10 : 20) *
-                    SHOP_CONFIG.priceMultiplier);
-                shopDescription += `> **${item.name}** - \`${price}\` Dust\n`;
+                const item = GameData.getItem(itemId);
+                const itemEmoji = CommandHelpers.getItemEmoji(itemId);
+                const basePrice = (item.rarity === "Common" ? 10 : 20) * SHOP_CONFIG.priceMultiplier;
+                const price = Math.max(1, Math.floor(basePrice * (1 - (labEffects?.shopDiscount || 0))));
+                shopDescription += `> ${itemEmoji} **${item.name}** - \`${price}\` Dust\n`;
             });
 
             shopDescription += "\n**📚 Daily Recipe Scrolls** *(Gold)*\n";
@@ -363,7 +361,8 @@ module.exports = {
 
             availableScrolls.forEach((scrollId) => {
                 const scroll = RECIPE_SCROLLS[scrollId];
-                shopDescription += `> **${scroll.name}** - \`${scroll.price}\` Gold\n`;
+                const price = Math.max(1, Math.floor(scroll.price * (1 - (labEffects?.shopDiscount || 0))));
+                shopDescription += `> ${CommandHelpers.getItemEmoji("scroll")} **${scroll.name}** - \`${price}\` Gold\n`;
             });
 
             if (availableScrolls.length === 0) {
@@ -387,10 +386,9 @@ module.exports = {
             // Create ingredient select menu
             if (dailyDeals.length > 0) {
                 const ingredientOptions = dailyDeals.map((itemId) => {
-                    const item = allItems[itemId];
-                    const price = Math.floor(
-                        (item.rarity === "Common" ? 10 : 20) *
-                        SHOP_CONFIG.priceMultiplier);
+                    const item = GameData.getItem(itemId);
+                    const basePrice = (item.rarity === "Common" ? 10 : 20) * SHOP_CONFIG.priceMultiplier;
+                    const price = Math.max(1, Math.floor(basePrice * (1 - (labEffects?.shopDiscount || 0))));
                     return {
                         label: item.name,
                         description: `${item.description.substring(0, 80)} - ${price} Dust`,
@@ -412,9 +410,10 @@ module.exports = {
             if (availableScrolls.length > 0) {
                 const scrollOptions = availableScrolls.map((scrollId) => {
                     const scroll = RECIPE_SCROLLS[scrollId];
+                    const price = Math.max(1, Math.floor(scroll.price * (1 - (labEffects?.shopDiscount || 0))));
                     return {
                         label: scroll.name,
-                        description: `${scroll.description.substring(0, 80)} - ${scroll.price} Gold`,
+                        description: `${scroll.description.substring(0, 80)} - ${price} Gold`,
                         value: scrollId,
                     };
                 });
@@ -455,10 +454,9 @@ module.exports = {
 
                     if (interaction.customId === "buy_ingredient") {
                         const itemId = interaction.values[0];
-                        const item = allItems[itemId];
-                        const price = Math.floor(
-                            (item.rarity === "Common" ? 10 : 20) *
-                            SHOP_CONFIG.priceMultiplier);
+                        const item = GameData.getItem(itemId);
+                        const basePrice = (item.rarity === "Common" ? 10 : 20) * SHOP_CONFIG.priceMultiplier;
+                        const price = Math.max(1, Math.floor(basePrice * (1 - (labEffects?.shopDiscount || 0))));
 
                         if (currentPlayer.arcaneDust < price) {
                             return interaction.followUp({
@@ -492,7 +490,7 @@ module.exports = {
                             embeds: [
                                 createSuccessEmbed(
                                     "Purchase Successful!",
-                                    `You bought **${item.name}** for **${price}** Arcane Dust!\nRemaining Dust: **${currentPlayer.arcaneDust}**`,
+                                    `You bought **${CommandHelpers.getItemEmoji(itemId)} ${item.name}** for **${price}** Arcane Dust!\nRemaining Dust: **${currentPlayer.arcaneDust}**`,
                                 ),
                             ],
                             ephemeral: true,
@@ -500,13 +498,14 @@ module.exports = {
                     } else if (interaction.customId === "buy_scroll") {
                         const scrollId = interaction.values[0];
                         const scroll = RECIPE_SCROLLS[scrollId];
+                        const scrollPrice = Math.max(1, Math.floor(scroll.price * (1 - (labEffects?.shopDiscount || 0))));
 
-                        if (currentPlayer.gold < scroll.price) {
+                        if (currentPlayer.gold < scrollPrice) {
                             return interaction.followUp({
                                 embeds: [
                                     createErrorEmbed(
                                         "Insufficient Gold",
-                                        `You need **${scroll.price}** Gold to buy **${scroll.name}**.\nYou currently have **${currentPlayer.gold}** Gold.`,
+                                        `You need **${scrollPrice}** Gold to buy **${scroll.name}**.\nYou currently have **${currentPlayer.gold}** Gold.`,
                                     ),
                                 ],
                                 ephemeral: true,
@@ -530,7 +529,7 @@ module.exports = {
                         }
 
                         // Purchase the scroll and learn the recipe
-                        currentPlayer.gold -= scroll.price;
+                        currentPlayer.gold -= scrollPrice;
 
                         // Determine if it's a potion or equipment recipe based on result itemId
                         if (scroll.recipeId.includes("elixir") || scroll.recipeId.includes("healing") || scroll.recipeId.includes("brew") || scroll.recipeId.includes("draught") || scroll.recipeId.includes("potion") || scroll.recipeId.includes("tonic")) {
@@ -547,7 +546,7 @@ module.exports = {
                             embeds: [
                                 createSuccessEmbed(
                                     "Recipe Learned!",
-                                    `You purchased **${scroll.name}** for **${scroll.price}** Gold!\nThe recipe has been added to your **${recipeType}**.\nRemaining Gold: **${currentPlayer.gold}**`,
+                                        `You purchased **${CommandHelpers.getItemEmoji("scroll")} ${scroll.name}** for **${scrollPrice}** Gold!\nThe recipe has been added to your **${recipeType}**.\nRemaining Gold: **${currentPlayer.gold}**`,
                                 ),
                             ],
                             ephemeral: true,

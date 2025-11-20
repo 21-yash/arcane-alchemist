@@ -1,6 +1,7 @@
 const Player = require('../../models/Player');
-const allItems = require('../../gamedata/items');
+const GameData = require('../../utils/gameData');
 const { createInfoEmbed, createErrorEmbed } = require('../../utils/embed');
+const CommandHelpers = require('../../utils/commandHelpers');
 
 /**
  * Formats milliseconds into a human-readable string (e.g., 1h 15m 30s).
@@ -43,11 +44,11 @@ module.exports = {
     aliases: ['buffs', 'activeeffects'],
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-
-            if (!player) {
-                return message.reply({ embeds: [createErrorEmbed('No Adventure Started', `You haven't started your journey yet! Use \`${prefix}start\` to begin.`)] });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
 
             const currentTime = Date.now();
             
@@ -64,7 +65,7 @@ module.exports = {
             } else {
                 activeEffects.forEach(effect => {
                     const itemId = effect.source.toLowerCase().replace(/\s+/g, '_');
-                    const itemName = allItems[itemId]?.name || 'Unknown Source';
+                    const itemName = GameData.getItem(itemId)?.name || 'Unknown Source';
                     const timeRemaining = formatDuration(effect.expiresAt - currentTime);
                     const effectDescription = generateEffectDescription(effect);
 

@@ -3,6 +3,7 @@ const Pet = require('../models/Pet');
 const allPals = require('../gamedata/pets');
 const { createInfoEmbed } = require('./embed');
 const SkillTree = require('../models/SkillTree');
+const LabManager = require('./labManager');
 
 /**
  * Calculates the total XP required to reach a certain level using a scaling formula.
@@ -24,11 +25,19 @@ function calculateXpForNextLevel(level) {
  * @param {string} userId The ID of the user gaining XP.
  * @param {number} xpGained The amount of XP to grant.
  */
-async function grantPlayerXp(client, message, userId, xpGained) {
+async function grantPlayerXp(client, message, userId, xpGained, options = {}) {
     const player = await Player.findOne({ userId });
     if (!player) return;
 
-    player.xp += xpGained;
+    let labEffects = options.labEffects;
+    if (!labEffects) {
+        const { effects } = await LabManager.getLabData(userId);
+        labEffects = effects;
+    }
+
+    const finalXp = LabManager.applyPlayerXpBonus(xpGained, labEffects);
+
+    player.xp += finalXp;
 
     let xpNeeded = calculateXpForNextLevel(player.level);
     let leveledUp = false;
@@ -61,8 +70,16 @@ async function grantPlayerXp(client, message, userId, xpGained) {
  * @param {object} palDocument The Mongoose document for the Pal gaining XP.
  * @param {number} xpGained The amount of XP to grant.
  */
-async function grantPalXp(client, message, palDocument, xpGained) {
-    palDocument.xp += xpGained;
+async function grantPalXp(client, message, palDocument, xpGained, options = {}) {
+    let labEffects = options.labEffects;
+    if (!labEffects && palDocument.ownerId) {
+        const { effects } = await LabManager.getLabData(palDocument.ownerId);
+        labEffects = effects;
+    }
+
+    const finalXp = LabManager.applyPalXpBonus(xpGained, labEffects);
+
+    palDocument.xp += finalXp;
 
     let xpNeeded = calculateXpForNextLevel(palDocument.level);
     let leveledUp = false;

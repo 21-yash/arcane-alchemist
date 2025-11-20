@@ -2,8 +2,8 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const Player = require('../../models/Player');
 const { createErrorEmbed, createInfoEmbed, createCustomEmbed } = require('../../utils/embed');
-const allItems = require('../../gamedata/items');
-const allRecipes = require('../../gamedata/recipes');
+const GameData = require('../../utils/gameData');
+const CommandHelpers = require('../../utils/commandHelpers');
 
 module.exports = {
     name: 'craftbook',
@@ -12,16 +12,15 @@ module.exports = {
     aliases: ['recipes', 'crafts'],
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({
-                    embeds: [createErrorEmbed('No Adventure Started', `You haven't started your journey yet! Use \`${prefix}start\` to begin.`)]
-                });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
 
             // Get all non-potion recipes (equipment, tools, etc.)
-            const craftingRecipes = Object.entries(allRecipes).filter(([recipeId, recipe]) => {
-                const resultItem = allItems[recipe.result.itemId];
+            const craftingRecipes = Object.entries(GameData.recipes).filter(([recipeId, recipe]) => {
+                const resultItem = GameData.getItem(recipe.result.itemId);
                 return resultItem && resultItem.type !== 'potion' && resultItem.source === 'crafting';
             });
 
@@ -43,7 +42,7 @@ module.exports = {
                     );
 
                     pageRecipes.forEach(([recipeId, recipe]) => {
-                        const item = allItems[recipe.result.itemId];
+                        const item = GameData.getItem(recipe.result.itemId);
                         const isKnown = player.craftingJournal.includes(recipeId);
                         const status = isKnown ? '✅' : '❓';
                         
@@ -56,7 +55,7 @@ module.exports = {
                         }
 
                         const ingredients = recipe.ingredients.map(ing => 
-                            `${allItems[ing.itemId].name} x${ing.quantity}`
+                            `${CommandHelpers.getItemEmoji(ing.itemId)} \`x${ing.quantity}\` ${GameData.getItem(ing.itemId)?.name || 'Unknown'}`
                         ).join(', ');
 
                         embed.addFields({
@@ -121,30 +120,30 @@ module.exports = {
                 const searchTerm = args.join(' ').toLowerCase().replace(/\s+/g, '_');
                 
                 // Find item by name or ID
-                const itemId = Object.keys(allItems).find(id => 
+                const itemId = Object.keys(GameData.items).find(id => 
                     id.toLowerCase() === searchTerm ||
-                    allItems[id].name.toLowerCase().replace(/\s+/g, '_') === searchTerm
+                    GameData.getItem(id)?.name?.toLowerCase().replace(/\s+/g, '_') === searchTerm
                 );
 
-                if (!itemId || allItems[itemId].type === 'potion') {
+                if (!itemId || GameData.getItem(itemId)?.type === 'potion') {
                     return message.reply({
                         embeds: [createErrorEmbed('Item Not Found', `Could not find a craftable item named "${args.join(' ')}" or it's a potion (use !grimoire for potions).`)]
                     });
                 }
 
                 // Find the recipe for this item
-                const recipeEntry = Object.entries(allRecipes).find(([recipeId, recipe]) => 
+                const recipeEntry = Object.entries(GameData.recipes).find(([recipeId, recipe]) => 
                     recipe.result.itemId === itemId
                 );
 
                 if (!recipeEntry) {
                     return message.reply({
-                        embeds: [createErrorEmbed('No Recipe Found', `No crafting recipe exists for ${allItems[itemId].name}.`)]
+                        embeds: [createErrorEmbed('No Recipe Found', `No crafting recipe exists for ${GameData.getItem(itemId)?.name || 'Unknown'}.`)]
                     });
                 }
 
                 const [recipeId, recipe] = recipeEntry;
-                const item = allItems[itemId];
+                const item = GameData.getItem(itemId);
                 const isKnown = player.craftingJournal.includes(recipeId);
 
                 let typeIcon = '';
@@ -177,7 +176,7 @@ module.exports = {
 
                 if (isKnown) {
                     const ingredients = recipe.ingredients.map(ing => 
-                        `• ${allItems[ing.itemId].name} x${ing.quantity}`
+                        `• ${CommandHelpers.getItemEmoji(ing.itemId)} \`x${ing.quantity}\` ${GameData.getItem(ing.itemId).name}`
                     ).join('\n');
                     
                     embed.addFields(

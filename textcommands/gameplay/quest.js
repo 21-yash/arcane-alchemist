@@ -1,9 +1,10 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const Player = require('../../models/Player');
 const QuestProgress = require('../../models/Quest');
-const questData = require('../../gamedata/quests');
+const GameData = require('../../utils/gameData');
 const { createErrorEmbed, createSuccessEmbed, createCustomEmbed } = require('../../utils/embed');
 const { initializeQuestProgress, updateQuestProgress } = require('../../utils/questSystem');
+const CommandHelpers = require('../../utils/commandHelpers');
 
 module.exports = {
     name: 'quest',
@@ -12,17 +13,12 @@ module.exports = {
     aliases: ['q', 'quests'],
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({ 
-                    embeds: [createErrorEmbed('No Adventure Started', `You haven't started your journey yet! Use \`${prefix}start\` to begin.`)] 
-                });
+            const playerResult = await CommandHelpers.validatePlayerWithQuests(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
-
-            let questProgress = await QuestProgress.findOne({ playerId: message.author.id });
-            if (!questProgress) {
-                questProgress = await initializeQuestProgress(message.author.id);
-            }
+            const player = playerResult.player;
+            let questProgress = playerResult.questProgress;
 
             const subcommand = args[0]?.toLowerCase();
 
@@ -71,7 +67,7 @@ async function handleQuestList(message, args, player, questProgress) {
                 title = `${filterType.charAt(0).toUpperCase() + filterType.slice(1)} Quests`;
             } else {
                 filteredQuests = filteredQuests.filter(q => {
-                    const questInfo = questData[q.questId];
+                    const questInfo = GameData.getQuest(q.questId);
                     return questInfo && questInfo.type === filterType;
                 });
                 title = `${filterType.charAt(0).toUpperCase() + filterType.slice(1)} Quests`;
@@ -100,7 +96,7 @@ async function handleQuestList(message, args, player, questProgress) {
             const pageQuests = filteredQuests.slice(start, start + questsPerPage);
             
             const questList = pageQuests.map(quest => {
-                const questInfo = questData[quest.questId];
+                const questInfo = GameData.getQuest(quest.questId);
                 if (!questInfo) return `❓ **Unknown Quest** (${quest.questId})\n└ Quest data not found`;
                 
                 const statusEmoji = {
@@ -209,7 +205,7 @@ async function handleQuestInfo(message, args, player, questProgress) {
         }
         
         const questId = args[1].toLowerCase();
-        const questInfo = questData[questId];
+        const questInfo = GameData.getQuest(questId);
         
         if (!questInfo) {
             const availableQuests = Object.keys(questData).slice(0, 5).join(', ');
@@ -247,7 +243,7 @@ async function handleQuestInfo(message, args, player, questProgress) {
         
         if (questInfo.prerequisites && questInfo.prerequisites.length > 0) {
             const prereqText = questInfo.prerequisites.map(id => {
-                const prereqInfo = questData[id];
+                const prereqInfo = GameData.getQuest(id);
                 const prereqQuest = questProgress.quests.find(q => q.questId === id);
                 const status = prereqQuest?.status === 'completed' ? '✅' : '❌';
                 return `${status} ${prereqInfo?.name || id}`;
@@ -301,7 +297,7 @@ async function handleStartQuest(message, args, player, questProgress) {
         }
         
         const questId = args[1].toLowerCase();
-        const questInfo = questData[questId];
+        const questInfo = GameData.getQuest(questId);
         
         if (!questInfo) {
             return message.reply({ 
@@ -345,7 +341,7 @@ async function handleStartQuest(message, args, player, questProgress) {
             });
             
             if (unmetPrereqs.length > 0) {
-                const prereqNames = unmetPrereqs.map(id => questData[id]?.name || id).join(', ');
+                const prereqNames = unmetPrereqs.map(id => GameData.getQuest(id)?.name || id).join(', ');
                 return message.reply({ 
                     embeds: [createErrorEmbed(
                         'Prerequisites Not Met', 
@@ -401,7 +397,7 @@ async function handleAbandonQuest(message, args, player, questProgress) {
         }
         
         const questId = args[1].toLowerCase();
-        const questInfo = questData[questId];
+        const questInfo = GameData.getQuest(questId);
         const playerQuest = questProgress.quests.find(q => q.questId === questId);
         
         if (!questInfo || !playerQuest) {

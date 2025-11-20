@@ -19,7 +19,7 @@ module.exports = [
         name: 'Expert Forager',
         description: 'Forage 100 times.',
         condition: { type: 'forage', count: 100 },
-        reward: { xp: 2000, gold: 500, item: 'uncommon_elemental_egg' }
+        reward: { xp: 2000, gold: 500, item: 'elemental_egg' }
     },
 
     // --- HATCHING ACHIEVEMENTS ---
@@ -51,7 +51,7 @@ module.exports = [
         name: 'Dungeon Crawler',
         description: 'Successfully clear 50 dungeons.',
         condition: { type: 'dungeonClear', count: 50 },
-        reward: { xp: 2500, gold: 1000, item: 'epic_undead_egg' }
+        reward: { xp: 2500, gold: 1000, item: 'undead_egg' }
     },
 
     // --- ALCHEMY ACHIEVEMENTS ---
@@ -103,6 +103,20 @@ module.exports = [
         name: 'Master Breeder',
         description: 'Breed 10 eggs.',
         condition: { type: 'palsBred', count: 10 },
-        reward: { xp: 2000, gold: 500, item: 'epic_elemental_egg' }
+        reward: { xp: 2000, gold: 500, item: 'elemental_egg' }
+    },
+    {
+        id: 'breed_25',
+        name: 'Temporal Genealogist',
+        description: 'Breed 25 eggs.',
+        condition: { type: 'palsBred', count: 25 },
+        reward: { xp: 3000, gold: 800, item: 'aeonic_egg' }
+    },
+    {
+        id: 'breed_50',
+        name: 'Abyssal Lineages',
+        description: 'Breed 50 eggs.',
+        condition: { type: 'palsBred', count: 50 },
+        reward: { xp: 4500, gold: 1500, item: 'abyssal_egg' }
     },
 ];

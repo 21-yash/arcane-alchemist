@@ -11,10 +11,9 @@ const {
     createInfoEmbed,
     createWarningEmbed,
 } = require("../../utils/embed");
-const allBiomes = require("../../gamedata/biomes");
-const allDungeons = require("../../gamedata/dungeons");
+const GameData = require("../../utils/gameData");
+const CommandHelpers = require("../../utils/commandHelpers");
 const Pet = require("../../models/Pet");
-const allPals = require("../../gamedata/pets");
 
 module.exports = {
     name: "select",
@@ -22,17 +21,11 @@ module.exports = {
     usage: "<biome|dungeon|pet>",
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({
-                    embeds: [
-                        createWarningEmbed(
-                            "No Adventure Started",
-                            `You haven't started your journey yet! Use \`${prefix}start\` to begin.`,
-                        ),
-                    ],
-                });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
 
             if (!args[0]) {
                 // Show current selections
@@ -45,8 +38,8 @@ module.exports = {
                 const pal = await Pet.findOne({ petId: player.preferences?.selectedPet });
 
                 let description = "**Current Selections:**\n";
-                description += `🌲 **Biome:** ${currentSelections.biome === "None" ? "None" : allBiomes[currentSelections.biome]?.name || "Unknown"}\n`;
-                description += `🏰 **Dungeon:** ${currentSelections.dungeon === "None" ? "None" : allDungeons[currentSelections.dungeon]?.name || "Unknown"}\n`;
+                description += `🌲 **Biome:** ${currentSelections.biome === "None" ? "None" : GameData.getBiome(currentSelections.biome)?.name || "Unknown"}\n`;
+                description += `🏰 **Dungeon:** ${currentSelections.dungeon === "None" ? "None" : GameData.getDungeon(currentSelections.dungeon)?.name || "Unknown"}\n`;
                 description += `🐾 **Pet:** ${currentSelections.pet === "None" ? "None" : pal?.nickname}\n\n`;
                 description += `Use \`${prefix}select <biome|dungeon|pet>\` to change your selections.`;
 
@@ -151,7 +144,7 @@ async function handleBiomeSelection(message, player, client, prefix) {
         } else {
             player.preferences.selectedBiome = selectedBiome;
             await player.save();
-            const biomeName = allBiomes[selectedBiome].name;
+            const biomeName = GameData.getBiome(selectedBiome)?.name || "Unknown";
             await interaction.update({
                 embeds: [createSuccessEmbed("Biome Selected", `Your preferred biome is now **${biomeName}**.`)],
                 components: [],
@@ -167,6 +160,7 @@ async function handleBiomeSelection(message, player, client, prefix) {
 }
 
 async function handleDungeonSelection(message, player, client, prefix) {
+    const allDungeons = GameData.dungeons;
     const dungeonOptions = Object.entries(allDungeons)
         .filter(([, dungeon]) => player.level >= dungeon.levelRequirement)
         .map(([dungeonId, dungeon]) => ({
@@ -226,7 +220,7 @@ async function handleDungeonSelection(message, player, client, prefix) {
         } else {
             player.preferences.selectedDungeon = selectedDungeon;
             await player.save();
-            const dungeonName = allDungeons[selectedDungeon].name;
+            const dungeonName = GameData.getDungeon(selectedDungeon)?.name || "Unknown";
             await interaction.update({
                 embeds: [createSuccessEmbed("Dungeon Selected", `Your preferred dungeon is now **${dungeonName}**.`)],
                 components: [],

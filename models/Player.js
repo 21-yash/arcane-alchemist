@@ -26,6 +26,13 @@ const PlayerSchema = new mongoose.Schema({
         eggId: { type: String, default: null },
         hatchesAt: { type: Date, default: null }
     },
+    labHatchingSlots: {
+        type: [{
+            eggId: { type: String, default: null },
+            hatchesAt: { type: Date, default: null }
+        }],
+        default: []
+    },
     breedingSlot: {
         pet1Id: { type: Number, default: null },
         pet2Id: { type: Number, default: null },
@@ -42,6 +49,9 @@ const PlayerSchema = new mongoose.Schema({
         palsBred: { type: Number, default: 0},
         palsOwned: { type: Number, default: 0 },
         goldEarned: { type: Number, default: 0 },
+        expeditionsCompleted: { type: Number, default: 0 },
+        arenaWins: { type: Number, default: 0 },
+        eggsProduced: { type: Number, default: 0 },
     },
     preferences: {
         selectedBiome: { type: String, default: null },

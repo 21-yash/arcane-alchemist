@@ -3,16 +3,17 @@ const Player = require('../../models/Player');
 const Pet = require('../../models/Pet');
 const { createErrorEmbed, createCustomEmbed, createInfoEmbed } = require('../../utils/embed');
 const { calculateXpForNextLevel } = require('../../utils/leveling');
-const allPals = require('../../gamedata/pets');
+const GameData = require('../../utils/gameData');
 const config = require('../../config/config.json');
-const { getMember } = require('../../utils/functions');
 const { restorePetHp } = require('../../utils/stamina');
+const CommandHelpers = require('../../utils/commandHelpers');
+const LabManager = require('../../utils/labManager');
 
 const PALS_PER_PAGE = 10;
 
 // Helper function for the detailed Pal view embed
 const generatePalDetailEmbed = (pal, member) => {
-    const basePalInfo = allPals[pal.basePetId];
+    const basePalInfo = GameData.getPet(pal.basePetId);
     
     const xpForNextLevel = calculateXpForNextLevel(pal.level);
     const progressPercentage = Math.floor((pal.xp / xpForNextLevel) * 100);
@@ -49,22 +50,20 @@ module.exports = {
             // --- Subcommand: View specific Pal info ---
             if (args[0]?.toLowerCase() === 'info') {
                 const palId = parseInt(args[1]);
-                if (!palId || isNaN(palId)) {
-                    return message.reply({ embeds: [createErrorEmbed('Missing or Invalid Pal ID', `You need to provide a numeric ID of the Pal you want to view. Usage: \`${prefix}pet info <pal_id>\``)] });
+                const petResult = await CommandHelpers.validatePet(message.author.id, palId, prefix);
+                if (!petResult.success) {
+                    return message.reply({ embeds: [petResult.embed] });
                 }
-                let pal = await Pet.findOne({ ownerId: message.author.id, shortId: palId });
-                if (!pal) {
-                    return message.reply({ embeds: [createErrorEmbed('Pal Not Found', 'No Pal exists with that ID.')] });
-                }
-
-                pal = await restorePetHp(pal);
+                let pal = petResult.pet;
+                const { effects: ownerLabEffects } = await LabManager.getLabData(pal.ownerId);
+                pal = await restorePetHp(pal, ownerLabEffects);
                 // Fetch the owner's member object to display their avatar
                 const ownerMember = await message.guild.members.fetch(pal.ownerId).catch(() => null);
                 if (!ownerMember) {
                     return message.reply({ embeds: [createErrorEmbed('Owner Not Found', 'Could not find the owner of this Pal in the server.')] });
                 }
 
-                const filteredPal = allPals[pal.basePetId];
+                const filteredPal = GameData.getPet(pal.basePetId);
                 
                 const detailEmbed = generatePalDetailEmbed(pal, ownerMember);
                 detailEmbed.setThumbnail(filteredPal.pic)
@@ -72,15 +71,16 @@ module.exports = {
             }
 
             // --- Main Command: List Pals with Filters ---
-            const member = getMember(message, args.filter(arg => !arg.startsWith('--')).join(' ')) || message.member;
+            const member = await CommandHelpers.getMemberFromMessage(message, args.filter(arg => !arg.startsWith('--')).join(' ')) || message.member;
 
-            const player = await Player.findOne({ userId: member.id });
-            if (!player) {
+            const playerResult = await CommandHelpers.validatePlayer(member.id, prefix);
+            if (!playerResult.success) {
                 const notStartedMsg = member.id === message.author.id
                     ? `You haven't started your journey yet! Use \`${prefix}start\` to begin.`
                     : `**${member.displayName}** has not started their alchemical journey yet.`;
                 return message.reply({ embeds: [createErrorEmbed('No Adventure Started', notStartedMsg)] });
             }
+            const player = playerResult.player;
 
             let pals = await Pet.find({ ownerId: member.id });
             if (pals.length === 0) {
@@ -98,11 +98,11 @@ module.exports = {
             for (const filter of filters) {
                 const [key, value] = filter.slice(2).split('=');
                 if (key === 'rarity' && value) {
-                    filteredPals = filteredPals.filter(p => allPals[p.basePetId].rarity.toLowerCase() === value.toLowerCase());
+                    filteredPals = filteredPals.filter(p => GameData.getPet(p.basePetId)?.rarity?.toLowerCase() === value.toLowerCase());
                     filterDescription = `Filtering by Rarity: **${value}**`;
                 }
                 if (key === 'type' && value) {
-                    filteredPals = filteredPals.filter(p => allPals[p.basePetId].type.toLowerCase() === value.toLowerCase());
+                    filteredPals = filteredPals.filter(p => GameData.getPet(p.basePetId)?.type?.toLowerCase() === value.toLowerCase());
                     filterDescription = `Filtering by Type: **${value}**`;
                 }
                 if (key === 'lvl') {
@@ -125,7 +125,7 @@ module.exports = {
                 const pagePals = filteredPals.slice(start, end);
 
                 const list = pagePals.map(pal => {
-                    const base = allPals[pal.basePetId];
+                    const base = GameData.getPet(pal.basePetId);
                     return `**${pal.shortId}** ${config.emojis[pal.nickname]} **Lvl** \`${pal.level}\` • **${pal.nickname}** *\`${base.type}\`*`;
                 }).join('\n');
 

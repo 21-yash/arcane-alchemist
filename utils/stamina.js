@@ -11,13 +11,15 @@ const STAMINA_REGEN_INTERVAL_MINUTES = 2; // How many minutes it takes to restor
  * @param {object} playerDocument The Mongoose document for the player.
  * @returns {Promise<object>} The updated player document.
  */
-async function restoreStamina(playerDocument) {
+async function restoreStamina(playerDocument, labEffects = null) {
     const now = new Date();
     const timeDiffMinutes = (now - playerDocument.lastStaminaUpdate) / (1000 * 60);
+    const regenMultiplier = labEffects?.staminaRegenMultiplier || 1;
 
     // Only proceed if the player is not already at max stamina
     if (playerDocument.stamina < playerDocument.maxStamina && timeDiffMinutes > 0) {
-        const staminaToRestore = Math.floor(timeDiffMinutes / STAMINA_REGEN_INTERVAL_MINUTES) * STAMINA_REGEN_RATE;
+        const ticks = Math.floor(timeDiffMinutes / STAMINA_REGEN_INTERVAL_MINUTES);
+        const staminaToRestore = Math.floor(ticks * STAMINA_REGEN_RATE * regenMultiplier);
 
         if (staminaToRestore > 0) {
             const oldStamina = playerDocument.stamina;
@@ -25,7 +27,7 @@ async function restoreStamina(playerDocument) {
             
             // Important: We only update the timestamp by the amount of time that was "used up" for regeneration.
             // This prevents losing fractional minutes of regeneration time.
-            const minutesAccountedFor = Math.floor(timeDiffMinutes / STAMINA_REGEN_INTERVAL_MINUTES) * STAMINA_REGEN_INTERVAL_MINUTES;
+            const minutesAccountedFor = ticks * STAMINA_REGEN_INTERVAL_MINUTES;
             playerDocument.lastStaminaUpdate = new Date(playerDocument.lastStaminaUpdate.getTime() + minutesAccountedFor * 60000);
 
             await playerDocument.save();
@@ -49,13 +51,14 @@ const HP_REGEN_INTERVAL_MINUTES = 1; // How many minutes it takes to restore the
  * @param {object} petDocument The Mongoose document for the pet.
  * @returns {Promise<object>} The updated pet document.
  */
-async function restorePetHp(petDocument) {
+async function restorePetHp(petDocument, labEffects = null) {
     // Only heal if pet is injured and has currentHp set
     if (petDocument.status !== 'Injured' || petDocument.currentHp === null) {
         return petDocument;
     }
 
     const maxHp = petDocument.stats.hp;
+    const healingMultiplier = labEffects?.healingSpeedMultiplier || 1;
     
     // If already at full health, set status back to Idle
     if (petDocument.currentHp >= maxHp) {
@@ -69,14 +72,15 @@ async function restorePetHp(petDocument) {
     const timeDiffMinutes = (now - petDocument.lastInjuryUpdate) / (1000 * 60);
 
     if (timeDiffMinutes > 0) {
-        const hpToRestore = Math.floor(timeDiffMinutes / HP_REGEN_INTERVAL_MINUTES) * HP_REGEN_RATE;
+        const ticks = Math.floor(timeDiffMinutes / HP_REGEN_INTERVAL_MINUTES);
+        const hpToRestore = Math.floor(ticks * HP_REGEN_RATE * healingMultiplier);
 
         if (hpToRestore > 0) {
             const oldHp = petDocument.currentHp;
             petDocument.currentHp = Math.min(maxHp, oldHp + hpToRestore);
             
             // Update timestamp by the amount of time that was "used up" for regeneration
-            const minutesAccountedFor = Math.floor(timeDiffMinutes / HP_REGEN_INTERVAL_MINUTES) * HP_REGEN_INTERVAL_MINUTES;
+            const minutesAccountedFor = ticks * HP_REGEN_INTERVAL_MINUTES;
             petDocument.lastInjuryUpdate = new Date(petDocument.lastInjuryUpdate.getTime() + minutesAccountedFor * 60000);
 
             // Check if fully healed

@@ -1,5 +1,5 @@
 const Player = require("../../models/Player");
-const allItems = require("../../gamedata/items");
+const GameData = require("../../utils/gameData");
 const {
     createErrorEmbed,
     createSuccessEmbed,
@@ -59,8 +59,8 @@ module.exports = {
                 });
             }
 
-            if (!allItems[itemId]) {
-                const availableItems = Object.keys(allItems).slice(0, 10).join(", ");
+            if (!GameData.getItem(itemId)) {
+                const availableItems = Object.keys(GameData.items).slice(0, 10).join(", ");
                 return message.reply({
                     embeds: [
                         createErrorEmbed(
@@ -99,7 +99,7 @@ module.exports = {
 
             await targetPlayer.save();
 
-            const itemData = allItems[itemId];
+            const itemData = GameData.getItem(itemId);
             
             let targetUserDisplay = targetUserId;
             try {

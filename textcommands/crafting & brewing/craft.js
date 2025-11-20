@@ -1,9 +1,10 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-const Player = require("../../models/Player");
 const { createErrorEmbed, createSuccessEmbed, createWarningEmbed, createInfoEmbed } = require("../../utils/embed");
 const { grantPlayerXp } = require("../../utils/leveling");
 const GameData = require('../../utils/gameData');
 const { updateQuestProgress } = require('../../utils/questSystem');
+const CommandHelpers = require('../../utils/commandHelpers');
+const LabManager = require('../../utils/labManager');
 
 const activeCraftingSessions = new Set();
 
@@ -370,17 +371,13 @@ module.exports = {
                 });
             }
 
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({
-                    embeds: [
-                        createErrorEmbed(
-                            "No Adventure Started",
-                            `You haven't started your journey yet! Use \`${prefix}start\` to begin.`
-                        )
-                    ]
-                });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
+            const labContext = await LabManager.loadPlayerLab(player);
+            const labEffects = labContext.effects;
 
             const materials = getPlayerCraftingMaterials(player);
             if (materials.length === 0) {
@@ -422,7 +419,8 @@ module.exports = {
                     description += `\n**Selected Materials:**\n`;
                     Object.entries(selectedMaterials).forEach(([itemId, qty]) => {
                         const itemData = GameData.getItem(itemId);
-                        description += `> ${itemData.name} x${qty}\n`;
+                        const itemEmoji = CommandHelpers.getItemEmoji(itemId);
+                        description += `> ${itemEmoji} ${itemData.name} x${qty}\n`;
                     });
 
                     // Show recipe match status
@@ -585,25 +583,10 @@ module.exports = {
                                 recipesText += `\n**${recipe.resultItem.name}** (${recipe.result.quantity}x)\n`;
                                 recipesText += `Materials: ${recipe.ingredients.map(ing => {
                                     const item = GameData.getItem(ing.itemId);
-                                    return `${item.name} x${ing.quantity}`;
+                                    const itemEmoji = CommandHelpers.getItemEmoji(ing.itemId);
+                                    return `${itemEmoji} ${item.name} x${ing.quantity}`;
                                 }).join(', ')}\n`;
                             });
-                            recipesText += "\n" + "─".repeat(30) + "\n";
-                        }
-                        
-                        recipesText += `**All Available Crafting Recipes:** (${availableRecipes.length})\n`;
-                        availableRecipes.slice(0, 5).forEach(recipe => {
-                            const isKnown = knownRecipes.some(kr => kr.id === recipe.id);
-                            const status = isKnown ? "✅" : "❓";
-                            recipesText += `\n${status} **${recipe.resultItem.name}** (${recipe.result.quantity}x)\n`;
-                            recipesText += `Materials: ${recipe.ingredients.map(ing => {
-                                const item = GameData.getItem(ing.itemId);
-                                return `${item.name} x${ing.quantity}`;
-                            }).join(', ')}\n`;
-                        });
-                        
-                        if (availableRecipes.length > 5) {
-                            recipesText += `\n...and ${availableRecipes.length - 5} more recipes to discover!`;
                         }
 
                         if (recipesText.length > 4000) {
@@ -628,13 +611,22 @@ module.exports = {
                         // Find matching recipe
                         const matchResult = CraftingRecipeHandler.findMatchingRecipe(selectedMaterials, player);
 
+                        if (!matchResult.hasMatch) {
+                            await i.reply({
+                                embeds: [createErrorEmbed("No Recipe Match", "Those materials don't match any known crafting recipe.")],
+                                ephemeral: true
+                            });
+                            return;
+                        }
+
                         // Execute crafting
                         const craftResult = await this.executeCrafting(
                             player,
                             selectedMaterials,
                             matchResult,
                             client,
-                            message
+                            message,
+                            labEffects
                         );
 
                         await i.update({
@@ -704,7 +696,7 @@ module.exports = {
      * @param {Object} message - Discord message
      * @returns {Object} Crafting result
      */
-    async executeCrafting(player, materials, matchResult, client, message) {
+    async executeCrafting(player, materials, matchResult, client, message, labEffects = null) {
         try {
             if (matchResult.hasMatch) {
                 // Successful crafting
@@ -715,7 +707,8 @@ module.exports = {
                 player.stats.itemsCrafted = (player.stats.itemsCrafted || 0) + 1;
 
                 // Grant XP
-                await grantPlayerXp(client, message, player, recipe.xp);
+                await grantPlayerXp(client, message, player.userId, recipe.xp, { labEffects });
+                let newlyDiscoveredRecipe = null;
 
                 // Add recipe to crafting journal if not already there
                 if (!player.craftingJournal.includes(recipeId)) {
@@ -745,6 +738,10 @@ module.exports = {
                 // Clean up empty inventory slots
                 player.inventory = player.inventory.filter(item => item.quantity > 0);
 
+                if (labEffects?.recipeDiscoveryChance && Math.random() < labEffects.recipeDiscoveryChance) {
+                    newlyDiscoveredRecipe = discoverNewCraftingRecipe(player, labEffects?.advancedRecipesUnlocked);
+                }
+
                 await player.save();
 
                 // Emit events
@@ -752,7 +749,10 @@ module.exports = {
                 await updateQuestProgress(message.author.id, 'craft_items', 1);
 
                 const resultItemData = GameData.getItem(recipe.result.itemId);
-                const successMsg = `You successfully crafted **${recipe.result.quantity}x ${resultItemData.name}**!`;
+                let successMsg = `You successfully crafted **${recipe.result.quantity}x ${resultItemData.name}**!`;
+                if (newlyDiscoveredRecipe) {
+                    successMsg += `\n\n📘 You discovered a new blueprint: **${newlyDiscoveredRecipe}**!`;
+                }
 
                 return {
                     embed: createSuccessEmbed("Crafting Success!", successMsg)
@@ -795,3 +795,33 @@ module.exports = {
         }
     }
 };
+
+function discoverNewCraftingRecipe(player, allowAdvanced = false) {
+    const allRecipes = GameData.recipes || {};
+    const unknown = Object.entries(allRecipes).filter(([recipeId, recipeData]) => {
+        if (!recipeData?.result?.itemId) return false;
+        const item = GameData.getItem(recipeData.result.itemId);
+        if (!item || item.source !== 'crafting') return false;
+        if (!allowAdvanced && isAdvancedRecipe(recipeData)) {
+            return false;
+        }
+        return !player.craftingJournal.includes(recipeId);
+    });
+
+    if (!unknown.length) {
+        return null;
+    }
+
+    const [recipeId, recipeData] = unknown[Math.floor(Math.random() * unknown.length)];
+    player.craftingJournal.push(recipeId);
+    player.markModified?.('craftingJournal');
+    const itemData = GameData.getItem(recipeData.result.itemId);
+    return itemData?.name || recipeId;
+}
+
+function isAdvancedRecipe(recipeData) {
+    const item = GameData.getItem(recipeData.result.itemId);
+    if (!item) return false;
+    const rareTier = item.rarity && ['Epic', 'Legendary'].includes(item.rarity);
+    return rareTier || recipeData.level >= 10;
+}

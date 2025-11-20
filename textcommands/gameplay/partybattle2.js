@@ -16,8 +16,7 @@ const {
     createCustomEmbed,
     createInfoEmbed,
 } = require("../../utils/embed");
-const allItems = require("../../gamedata/items");
-const allPals = require("../../gamedata/pets");
+const GameData = require("../../utils/gameData");
 const { grantPalXp } = require("../../utils/leveling");
 const {
     CombatEngine,
@@ -607,7 +606,7 @@ module.exports = {
 
             // Only get battle potions (usable: false)
             const potions = player.inventory.filter((item) => {
-                const itemData = allItems[item.itemId];
+                const itemData = GameData.getItem(item.itemId);
                 return itemData?.type === "potion" && itemData.usable === false && item.quantity > 0;
             });
 
@@ -618,7 +617,7 @@ module.exports = {
                     value: "none",
                 },
                 ...potions.slice(0, 24).map((potion, index) => {
-                    const itemData = allItems[potion.itemId];
+                    const itemData = GameData.getItem(potion.itemId);
                     return {
                         label: itemData.name,
                         description: itemData.description.substring(0, 100),
@@ -707,7 +706,7 @@ module.exports = {
     async handlePotionSelection(interaction, battleSession, isChallenger) {
         const selectedPotionId = interaction.values[0];
         const [itemId] = selectedPotionId.split("_");
-        const selectedPotion = selectedPotionId === "none" ? null : allItems[itemId];
+        const selectedPotion = selectedPotionId === "none" ? null : GameData.getItem(itemId);
 
         if (isChallenger) {
             battleSession.challenger.potion = selectedPotion;
@@ -764,14 +763,14 @@ module.exports = {
             
             battleLog.push(`\n**${challengerUser.displayName}'s Party:**`);
             challenger.pals.forEach((pal, i) => {
-                const palData = allPals[pal.basePetId];
+                const palData = GameData.getPet(pal.basePetId);
                 const type = palData?.type || "Beast";
                 battleLog.push(`${i+1}. **${pal.nickname}** (Lv.${pal.level}) - ${type}`);
             });
             
             battleLog.push(`\n**${opponentUser.displayName}'s Party:**`);
             opponent.pals.forEach((pal, i) => {
-                const palData = allPals[pal.basePetId];
+                const palData = GameData.getPet(pal.basePetId);
                 const type = palData?.type || "Beast";
                 battleLog.push(`${i+1}. **${pal.nickname}** (Lv.${pal.level}) - ${type}`);
             });
@@ -816,8 +815,8 @@ module.exports = {
                     : StatManager.cloneCreature(opponentPal);
 
                 // Get pal types
-                const challengerPalData = allPals[challengerPal.basePetId];
-                const opponentPalData = allPals[opponentPal.basePetId];
+                const challengerPalData = GameData.getPet(challengerPal.basePetId);
+                const opponentPalData = GameData.getPet(opponentPal.basePetId);
                 const challengerType = challengerPalData?.type || "Beast";
                 const opponentType = opponentPalData?.type || "Beast";
 
@@ -831,12 +830,12 @@ module.exports = {
 
                 // Count beast types for pack leader bonus
                 const challengerBeastCount = challenger.pals.filter(p => {
-                    const palData = allPals[p.basePetId];
+                    const palData = GameData.getPet(p.basePetId);
                     return palData?.type === "Beast";
                 }).length;
                 
                 const opponentBeastCount = opponent.pals.filter(p => {
-                    const palData = allPals[p.basePetId];
+                    const palData = GameData.getPet(p.basePetId);
                     return palData?.type === "Beast";
                 }).length;
 
@@ -950,14 +949,135 @@ module.exports = {
             combatEngine.logger.clear();
             combatEngine.logger.add(`\n⚔️ **${challengerNickname}** vs **${opponentNickname}**`);
             
+            // Apply Crushing Pressure (Abyssal skill) - reduces opponent's ATK and SPD
+            if (challengerPal.skillBonuses?.enemyAtkDown || challengerPal.skillBonuses?.enemySpdDown) {
+                const atkReduction = challengerPal.skillBonuses.enemyAtkDown || 0;
+                const spdReduction = challengerPal.skillBonuses.enemySpdDown || 0;
+                if (atkReduction > 0 || spdReduction > 0) {
+                    const originalAtk = opponentPal.stats.atk;
+                    const originalSpd = opponentPal.stats.spd;
+                    opponentPal.stats.atk = Math.floor(opponentPal.stats.atk * (1 - atkReduction));
+                    opponentPal.stats.spd = Math.floor(opponentPal.stats.spd * (1 - spdReduction));
+                    const atkLost = originalAtk - opponentPal.stats.atk;
+                    const spdLost = originalSpd - opponentPal.stats.spd;
+                    combatEngine.logger.add(`🌊 **Crushing Pressure!** The abyss squeezes ${opponentNickname}!`);
+                    if (atkLost > 0) {
+                        combatEngine.logger.add(`${opponentNickname}'s ATK reduced by ${atkLost} (${originalAtk} → ${opponentPal.stats.atk})`);
+                    }
+                    if (spdLost > 0) {
+                        combatEngine.logger.add(`${opponentNickname}'s SPD reduced by ${spdLost} (${originalSpd} → ${opponentPal.stats.spd})`);
+                    }
+                }
+            }
+            
+            // Apply Crushing Pressure from opponent to challenger
+            if (opponentPal.skillBonuses?.enemyAtkDown || opponentPal.skillBonuses?.enemySpdDown) {
+                const atkReduction = opponentPal.skillBonuses.enemyAtkDown || 0;
+                const spdReduction = opponentPal.skillBonuses.enemySpdDown || 0;
+                if (atkReduction > 0 || spdReduction > 0) {
+                    const originalAtk = challengerPal.stats.atk;
+                    const originalSpd = challengerPal.stats.spd;
+                    challengerPal.stats.atk = Math.floor(challengerPal.stats.atk * (1 - atkReduction));
+                    challengerPal.stats.spd = Math.floor(challengerPal.stats.spd * (1 - spdReduction));
+                    const atkLost = originalAtk - challengerPal.stats.atk;
+                    const spdLost = originalSpd - challengerPal.stats.spd;
+                    combatEngine.logger.add(`🌊 **Crushing Pressure!** The abyss squeezes ${challengerNickname}!`);
+                    if (atkLost > 0) {
+                        combatEngine.logger.add(`${challengerNickname}'s ATK reduced by ${atkLost} (${originalAtk} → ${challengerPal.stats.atk})`);
+                    }
+                    if (spdLost > 0) {
+                        combatEngine.logger.add(`${challengerNickname}'s SPD reduced by ${spdLost} (${originalSpd} → ${challengerPal.stats.spd})`);
+                    }
+                }
+            }
+            
+            // Apply Terror From Below (defReduction) - reduces opponent's defense
+            if (challengerPal.skillBonuses?.defReduction) {
+                const defReduction = challengerPal.skillBonuses.defReduction;
+                const originalDef = opponentPal.stats.def;
+                opponentPal.stats.def = Math.floor(opponentPal.stats.def * (1 - defReduction));
+                const defLost = originalDef - opponentPal.stats.def;
+                if (defLost > 0) {
+                    combatEngine.logger.add(`😱 **Terror From Below!** ${challengerNickname} strikes fear into ${opponentNickname}, reducing their defenses!`);
+                    combatEngine.logger.add(`> ${opponentNickname}'s DEF reduced by ${defLost} (${originalDef} → ${opponentPal.stats.def})`);
+                }
+            }
+            
+            // Apply Terror From Below from opponent to challenger
+            if (opponentPal.skillBonuses?.defReduction) {
+                const defReduction = opponentPal.skillBonuses.defReduction;
+                const originalDef = challengerPal.stats.def;
+                challengerPal.stats.def = Math.floor(challengerPal.stats.def * (1 - defReduction));
+                const defLost = originalDef - challengerPal.stats.def;
+                if (defLost > 0) {
+                    combatEngine.logger.add(`😱 **Terror From Below!** ${opponentNickname} strikes fear into ${challengerNickname}, reducing their defenses!`);
+                    combatEngine.logger.add(`> ${challengerNickname}'s DEF reduced by ${defLost} (${originalDef} → ${challengerPal.stats.def})`);
+                }
+            }
+            
             let turn = 0;
             let challengerReviveUsed = false;
             let opponentReviveUsed = false;
             let areaAttackData = null;
+            const createParadoxState = () => ({
+                active: false,
+                pendingRecoil: false,
+                storedDamage: 0,
+                recoilPercent: 0.5
+            });
+            const challengerParadox = createParadoxState();
+            const opponentParadox = createParadoxState();
+
+            const applyParadoxRecoil = (state, currentHp, palLabel) => {
+                if (!state.pendingRecoil) return currentHp;
+                if (state.storedDamage > 0) {
+                    combatEngine.logger.add(`⏰ **Temporal Recoil!** ${palLabel} takes ${state.storedDamage} delayed damage!`);
+                    currentHp = Math.max(0, currentHp - state.storedDamage);
+                }
+                state.storedDamage = 0;
+                state.pendingRecoil = false;
+                return currentHp;
+            };
+
+            const tryActivateParadox = (creature, creatureLabel, state) => {
+                if (state.active || state.pendingRecoil) return;
+                const paradoxCheck = SkillManager.checkActivation(creature, "paradox_loop");
+                if (paradoxCheck?.type === "paradox_loop") {
+                    combatEngine.logger.add(paradoxCheck.message);
+                    state.active = true;
+                    state.recoilPercent = paradoxCheck.recoilPercent || 0.5;
+                    state.storedDamage = 0;
+                }
+            };
+
+            const handleParadoxBlock = (attackerCtx, defenderCtx, defenderState) => {
+                if (!defenderState.active) return false;
+                combatEngine.logger.add(`🔮 **${defenderCtx.name}** phases through time - attacks fail to connect!`);
+                const simulation = combatEngine.simulatePlayerAttack(
+                    attackerCtx.pal,
+                    defenderCtx.pal,
+                    attackerCtx.type,
+                    defenderCtx.type,
+                    attackerCtx.equipment,
+                    attackerCtx.potion,
+                    {},
+                    attackerCtx.name,
+                    defenderCtx.name,
+                    defenderCtx.equipment
+                );
+                const preventedDamage = Math.max(0, simulation.damage);
+                const storedChunk = Math.floor(preventedDamage * defenderState.recoilPercent);
+                defenderState.storedDamage += storedChunk;
+                combatEngine.logger.add(`⏰ *Storing ${storedChunk} temporal damage (total ${defenderState.storedDamage}).*`);
+                defenderState.active = false;
+                defenderState.pendingRecoil = true;
+                return true;
+            };
             
             while (challengerHp > 0 && opponentHp > 0 && turn < COMBAT_CONFIG.MAX_TURNS) {
                 turn++;
                 combatEngine.logger.add(`\n**--- Turn ${turn} ---**`);
+                combatEngine.logger.add("");
                 
                 const challengerStatusResult = StatusEffectManager.processStatusEffects(
                     { ...challengerPal, currentHp: challengerHp, maxHp: challengerPal.stats.hp, name: challengerNickname },
@@ -965,6 +1085,8 @@ module.exports = {
                 );
                 challengerHp = challengerStatusResult.creature.currentHp;
                 challengerPal.statusEffects = challengerStatusResult.creature.statusEffects;
+                // CRITICAL FIX: Apply modified stats back to the creature for damage calculation
+                challengerPal.stats = challengerStatusResult.creature.stats;
                 combatEngine.logger.addMultiple(challengerStatusResult.battleLog);
                 
                 const opponentStatusResult = StatusEffectManager.processStatusEffects(
@@ -973,7 +1095,20 @@ module.exports = {
                 );
                 opponentHp = opponentStatusResult.creature.currentHp;
                 opponentPal.statusEffects = opponentStatusResult.creature.statusEffects;
+                // CRITICAL FIX: Apply modified stats back to the creature for damage calculation
+                opponentPal.stats = opponentStatusResult.creature.stats;
                 combatEngine.logger.addMultiple(opponentStatusResult.battleLog);
+                
+                challengerHp = applyParadoxRecoil(
+                    challengerParadox,
+                    challengerHp,
+                    `${challengerUser.displayName}'s ${challengerNickname}`
+                );
+                opponentHp = applyParadoxRecoil(
+                    opponentParadox,
+                    opponentHp,
+                    `${opponentUser.displayName}'s ${opponentNickname}`
+                );
                 
                 if (challengerHp <= 0 || opponentHp <= 0) break;
                 
@@ -1004,88 +1139,110 @@ module.exports = {
                 };
                 
                 if (firstAttacker.statusResult.canAct !== false && secondAttacker.hp > 0) {
-                    const attackResult = combatEngine.executeAttack(
-                        firstAttacker.pal, secondAttacker.pal, firstAttacker.type, secondAttacker.type,
-                        firstAttacker.equipment, firstAttacker.potion, {},
-                        firstAttacker.name, secondAttacker.name, secondAttacker.equipment
-                    );
-                    
-                    secondAttacker.hp = Math.max(0, secondAttacker.hp - attackResult.damage);
-                    firstAttacker.hp = Math.min(firstAttacker.pal.stats.hp, firstAttacker.hp + (attackResult.lifesteal || 0));
-                    
-                    if (attackResult.counterDamage > 0) {
-                        firstAttacker.hp = Math.max(0, firstAttacker.hp - attackResult.counterDamage);
-                        combatEngine.logger.add(`💥 **Reflected damage:** ${firstAttacker.name} takes **${attackResult.counterDamage}** damage!`);
-                    }
-                    
-                    if (attackResult.elementalStormTriggered || attackResult.abyssalDevourerTriggered) {
-                        areaAttackData = {
-                            damage: this.calculateAreaDamage(firstAttacker.pal),
-                            attackerUser: firstAttacker.user,
-                            attackerType: firstAttacker.type,
-                            targetIsChallenger: turnOrder.first !== challengerPal
-                        };
-                    }
-                    
-                    if (secondAttacker.hp <= 0) {
-                        const reviveCheck = combatEngine.handleDeath(secondAttacker.pal, secondAttacker.equipment, secondAttacker.reviveUsed);
-                        if (reviveCheck) {
-                            secondAttacker.hp = Math.floor(secondAttacker.pal.stats.hp * 0.3);
-                            secondAttacker.reviveUsed = true;
-                            combatEngine.logger.add(`🌟 **${secondAttacker.name}** refuses to fall!`);
-                        } else {
-                            combatEngine.logger.add(`💀 **${secondAttacker.name}** has been defeated!`);
-                            
-                            // Update HP tracking before breaking
-                            if (turnOrder.first === challengerPal) {
-                                challengerHp = firstAttacker.hp;
-                                opponentHp = secondAttacker.hp;
-                            } else {
-                                challengerHp = secondAttacker.hp;
-                                opponentHp = firstAttacker.hp;
-                            }
-                            break;
+                    const defenderParadoxState = turnOrder.first === challengerPal ? opponentParadox : challengerParadox;
+                    tryActivateParadox(secondAttacker.pal, secondAttacker.name, defenderParadoxState);
+                    const attackBlocked = handleParadoxBlock(firstAttacker, secondAttacker, defenderParadoxState);
+
+                    if (!attackBlocked) {
+                        const attackResult = combatEngine.executeAttack(
+                            firstAttacker.pal, secondAttacker.pal, firstAttacker.type, secondAttacker.type,
+                            firstAttacker.equipment, firstAttacker.potion, {},
+                            firstAttacker.name, secondAttacker.name, secondAttacker.equipment
+                        );
+                        
+                        secondAttacker.hp = Math.max(0, secondAttacker.hp - attackResult.damage);
+                        firstAttacker.hp = Math.min(firstAttacker.pal.stats.hp, firstAttacker.hp + (attackResult.lifesteal || 0));
+                        
+                        if (attackResult.counterDamage > 0) {
+                            firstAttacker.hp = Math.max(0, firstAttacker.hp - attackResult.counterDamage);
+                            combatEngine.logger.add(`💥 **Reflected damage:** ${firstAttacker.name} takes **${attackResult.counterDamage}** damage!`);
                         }
+
+                        if (attackResult.reflectedDamage > 0) {
+                            firstAttacker.hp = Math.max(0, firstAttacker.hp - attackResult.reflectedDamage);
+                            combatEngine.logger.add(`⚡ **${firstAttacker.name} takes ${attackResult.reflectedDamage} reflected damage!**`);
+                        }
+                        
+                        if (attackResult.elementalStormTriggered || attackResult.abyssalDevourerTriggered) {
+                            areaAttackData = {
+                                damage: this.calculateAreaDamage(firstAttacker.pal),
+                                attackerUser: firstAttacker.user,
+                                attackerType: firstAttacker.type,
+                                targetIsChallenger: turnOrder.first !== challengerPal
+                            };
+                        }
+                        
+                        if (secondAttacker.hp <= 0) {
+                            const reviveCheck = combatEngine.handleDeath(secondAttacker.pal, secondAttacker.equipment, secondAttacker.reviveUsed);
+                            if (reviveCheck) {
+                                secondAttacker.hp = Math.floor(secondAttacker.pal.stats.hp * 0.3);
+                                secondAttacker.reviveUsed = true;
+                                combatEngine.logger.add(`🌟 **${secondAttacker.name}** refuses to fall!`);
+                            } else {
+                                combatEngine.logger.add(`💀 **${secondAttacker.name}** has been defeated!`);
+                                
+                                // Update HP tracking before breaking
+                                if (turnOrder.first === challengerPal) {
+                                    challengerHp = firstAttacker.hp;
+                                    opponentHp = secondAttacker.hp;
+                                } else {
+                                    challengerHp = secondAttacker.hp;
+                                    opponentHp = firstAttacker.hp;
+                                }
+                                break;
+                            }
+                        }
+                        combatEngine.logger.add(`❤️ *${secondAttacker.name} HP: ${secondAttacker.hp}/${secondAttacker.pal.stats.hp}*`);
                     }
-                    combatEngine.logger.add(`❤️ *${secondAttacker.name} HP: ${secondAttacker.hp}/${secondAttacker.pal.stats.hp}*`);
                 }
                 
                 if (secondAttacker.hp > 0 && firstAttacker.hp > 0 && secondAttacker.statusResult.canAct !== false) {
-                    const counterResult = combatEngine.executeAttack(
-                        secondAttacker.pal, firstAttacker.pal, secondAttacker.type, firstAttacker.type,
-                        secondAttacker.equipment, secondAttacker.potion, {},
-                        secondAttacker.name, firstAttacker.name, firstAttacker.equipment
-                    );
-                    
-                    firstAttacker.hp = Math.max(0, firstAttacker.hp - counterResult.damage);
-                    secondAttacker.hp = Math.min(secondAttacker.pal.stats.hp, secondAttacker.hp + (counterResult.lifesteal || 0));
-                    
-                    if (counterResult.counterDamage > 0) {
-                        secondAttacker.hp = Math.max(0, secondAttacker.hp - counterResult.counterDamage);
-                        combatEngine.logger.add(`💥 **Reflected damage:** ${secondAttacker.name} takes **${counterResult.counterDamage}** damage!`);
-                    }
-                    
-                    if (firstAttacker.hp <= 0) {
-                        const reviveCheck = combatEngine.handleDeath(firstAttacker.pal, firstAttacker.equipment, firstAttacker.reviveUsed);
-                        if (reviveCheck) {
-                            firstAttacker.hp = Math.floor(firstAttacker.pal.stats.hp * 0.3);
-                            firstAttacker.reviveUsed = true;
-                            combatEngine.logger.add(`🌟 **${firstAttacker.name}** refuses to fall!`);
-                        } else {
-                            combatEngine.logger.add(`💀 **${firstAttacker.name}** has been defeated!`);
-                            
-                            // Update HP tracking before breaking
-                            if (turnOrder.first === challengerPal) {
-                                challengerHp = firstAttacker.hp;
-                                opponentHp = secondAttacker.hp;
-                            } else {
-                                challengerHp = secondAttacker.hp;
-                                opponentHp = firstAttacker.hp;
-                            }
-                            break;
+                    const defenderParadoxState = turnOrder.first === challengerPal ? challengerParadox : opponentParadox;
+                    tryActivateParadox(firstAttacker.pal, firstAttacker.name, defenderParadoxState);
+                    const attackBlocked = handleParadoxBlock(secondAttacker, firstAttacker, defenderParadoxState);
+
+                    if (!attackBlocked) {
+                        const counterResult = combatEngine.executeAttack(
+                            secondAttacker.pal, firstAttacker.pal, secondAttacker.type, firstAttacker.type,
+                            secondAttacker.equipment, secondAttacker.potion, {},
+                            secondAttacker.name, firstAttacker.name, firstAttacker.equipment
+                        );
+                        
+                        firstAttacker.hp = Math.max(0, firstAttacker.hp - counterResult.damage);
+                        secondAttacker.hp = Math.min(secondAttacker.pal.stats.hp, secondAttacker.hp + (counterResult.lifesteal || 0));
+                        
+                        if (counterResult.counterDamage > 0) {
+                            firstAttacker.hp = Math.max(0, firstAttacker.hp - counterResult.counterDamage);
+                            combatEngine.logger.add(`💥 **Reflected damage:** ${firstAttacker.name} takes **${counterResult.counterDamage}** damage!`);
                         }
+
+                        if (counterResult.reflectedDamage > 0) {
+                            secondAttacker.hp = Math.max(0, secondAttacker.hp - counterResult.reflectedDamage);
+                            combatEngine.logger.add(`⚡ **${secondAttacker.name} takes ${counterResult.reflectedDamage} reflected damage!**`);
+                        }
+                        
+                        if (firstAttacker.hp <= 0) {
+                            const reviveCheck = combatEngine.handleDeath(firstAttacker.pal, firstAttacker.equipment, firstAttacker.reviveUsed);
+                            if (reviveCheck) {
+                                firstAttacker.hp = Math.floor(firstAttacker.pal.stats.hp * 0.3);
+                                firstAttacker.reviveUsed = true;
+                                combatEngine.logger.add(`🌟 **${firstAttacker.name}** refuses to fall!`);
+                            } else {
+                                combatEngine.logger.add(`💀 **${firstAttacker.name}** has been defeated!`);
+                                
+                                // Update HP tracking before breaking
+                                if (turnOrder.first === challengerPal) {
+                                    challengerHp = firstAttacker.hp;
+                                    opponentHp = secondAttacker.hp;
+                                } else {
+                                    challengerHp = secondAttacker.hp;
+                                    opponentHp = firstAttacker.hp;
+                                }
+                                break;
+                            }
+                        }
+                        combatEngine.logger.add(`❤️ *${firstAttacker.name} HP: ${firstAttacker.hp}/${firstAttacker.pal.stats.hp}*`);
                     }
-                    combatEngine.logger.add(`❤️ *${firstAttacker.name} HP: ${firstAttacker.hp}/${firstAttacker.pal.stats.hp}*`);
                 }
                 
                 // Update HP after turn completes normally
@@ -1103,6 +1260,11 @@ module.exports = {
                 
                 challengerHp = combatEngine.applyHealingEffects(challengerPal, challengerHp, challengerNickname);
                 opponentHp = combatEngine.applyHealingEffects(opponentPal, opponentHp, opponentNickname);
+                
+                // Display HP after each turn (just like battle2)
+                if (challengerHp > 0 && opponentHp > 0) {
+                    combatEngine.logger.add(`\n💚 **${challengerNickname}:** ${challengerHp}/${challengerPal.stats.hp} HP | **${opponentNickname}:** ${opponentHp}/${opponentPal.stats.hp} HP`);
+                }
             }
             
             // Determine winner
@@ -1182,7 +1344,7 @@ module.exports = {
                 const waitingPet = targetTeam.pals[i];
                 if (!waitingPet) continue;
 
-                const petData = allPals[waitingPet.basePetId];
+                const petData = GameData.getPet(waitingPet.basePetId);
                 const petType = petData?.type || "Beast";
                 const resistances = EquipmentManager.getResistances(waitingPet.equipment);
                 
@@ -1237,8 +1399,19 @@ module.exports = {
                     break;
                     
                 case "stat_boost":
-                    if (enhancedPal.stats[effect.stat] !== undefined) {
-                        enhancedPal.stats[effect.stat] += effect.value;
+                    // Handle both formats: { stat: 'atk', value: 10 } or { stats: { atk: 10 } }
+                    if (effect.stats) {
+                        // New format: stats object
+                        Object.entries(effect.stats).forEach(([stat, value]) => {
+                            if (enhancedPal.stats[stat] !== undefined) {
+                                enhancedPal.stats[stat] += value;
+                            }
+                        });
+                    } else if (effect.stat && effect.value !== undefined) {
+                        // Old format: stat and value
+                        if (enhancedPal.stats[effect.stat] !== undefined) {
+                            enhancedPal.stats[effect.stat] += effect.value;
+                        }
                     }
                     break;
                     
@@ -1270,7 +1443,7 @@ module.exports = {
                     break;
                     
                 case "familiar_type_boost":
-                    const palData = allPals[pal.basePetId];
+                    const palData = GameData.getPet(pal.basePetId);
                     const palType = palData?.type || "Beast";
                     if (palType.toLowerCase() === effect.target.toLowerCase()) {
                         Object.entries(effect.stats || {}).forEach(([stat, value]) => {
@@ -1309,6 +1482,22 @@ module.exports = {
             effects.special = {
                 ability: effect.ability,
                 chance: effect.chance || 0.25,
+                duration: effect.duration,
+            };
+            // Handle bonus stats from special effects
+            if (effect.bonus_luck) {
+                effects.bonus_luck = effect.bonus_luck;
+            }
+            if (effect.crit_bonus) {
+                effects.crit_bonus = effect.crit_bonus;
+            }
+        }
+        
+        // Handle multi_element type
+        if (effect.type === "multi_element") {
+            effects.multi_element = {
+                elements: effect.elements || [],
+                damage_boost: effect.damage_boost || 0,
                 duration: effect.duration,
             };
         }

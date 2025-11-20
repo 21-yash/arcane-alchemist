@@ -333,7 +333,7 @@ module.exports = {
                 description: 'Ultimate Aeonic skill - for one turn, the Pal becomes immune to damage, but takes a portion of that negated damage on its next turn.',
                 maxLevel: 1,
                 effects: [
-                    { level: 1, bonus: { damageImmunity: 1, recoilPercent: 0.50, paradoxChance: 0.20 } }
+                    { level: 1, bonus: { damageImmunity: 1, recoilPercent: 0.40, paradoxChance: 0.20 } }
                 ],
                 prerequisites: ['precognition', 'temporal_echo']
             }

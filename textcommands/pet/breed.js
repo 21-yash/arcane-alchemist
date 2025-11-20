@@ -3,26 +3,26 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } 
 const Player = require('../../models/Player');
 const Pet = require('../../models/Pet');
 const { createErrorEmbed, createSuccessEmbed, createWarningEmbed, createInfoEmbed } = require('../../utils/embed');
-const allItems = require('../../gamedata/items');
-const allPets = require('../../gamedata/pets');
+const GameData = require('../../utils/gameData');
+const CommandHelpers = require('../../utils/commandHelpers');
+const { updateQuestProgress } = require('../../utils/questSystem');
+const LabManager = require('../../utils/labManager');
 
 module.exports = {
     name: "breed",
     description: "Manage your breeding pen to breed pets and create eggs.",
     async execute(message, args, client, prefix) {
         try {
-            const player = await Player.findOne({ userId: message.author.id });
-            if (!player) {
-                return message.reply({
-                    embeds: [createErrorEmbed(
-                        "No Adventure Started",
-                        `You haven't started your journey yet! Use \`${prefix}start\` to begin.`
-                    )]
-                });
+            const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
+            if (!playerResult.success) {
+                return message.reply({ embeds: [playerResult.embed] });
             }
+            const player = playerResult.player;
+            const labContext = await LabManager.loadPlayerLab(player);
+            const labEffects = labContext.effects;
 
             // Check if player has a breeding pen
-            const hasBreedingPen = player.inventory.some(item => item.itemId === 'breeding_pen');
+            const hasBreedingPen = CommandHelpers.hasItem(player, 'breeding_pen');
             if (!hasBreedingPen) {
                 return message.reply({
                     embeds: [createErrorEmbed(
@@ -36,11 +36,11 @@ module.exports = {
 
             // Handle subcommands
             if (subcommand === 'status') {
-                return this.handleStatus(message, player, prefix);
+                return this.handleStatus(message, player, prefix, labEffects);
             }
             
             if (subcommand === 'claim') {
-                return this.handleClaim(message, player, client, prefix);
+                return this.handleClaim(message, player, client, prefix, labEffects);
             }
 
             if (subcommand === 'remove') {
@@ -50,11 +50,11 @@ module.exports = {
             if (subcommand === 'add' && args.length >= 3) {
                 const shortId1 = parseInt(args[1]);
                 const shortId2 = parseInt(args[2]);
-                return this.handleAddPets(message, player, shortId1, shortId2, prefix);
+                return this.handleAddPets(message, player, shortId1, shortId2, prefix, labEffects);
             }
 
             // Default behavior - show interactive menu
-            return this.handleInteractiveMenu(message, player, client, prefix);
+            return this.handleInteractiveMenu(message, player, client, prefix, labEffects);
 
         } catch (error) {
             console.error('Breed command error:', error);
@@ -67,12 +67,14 @@ module.exports = {
         }
     },
 
-    async handleStatus(message, player, prefix) {
+    async handleStatus(message, player, prefix, labEffects) {
         let description = "**🏠 Breeding Pen Status**\n\n";
         
         if (player.breedingSlot && player.breedingSlot.pet1Id && player.breedingSlot.pet2Id) {
-            const pet1 = await Pet.findOne({ ownerId: message.author.id, shortId: player.breedingSlot.pet1Id });
-            const pet2 = await Pet.findOne({ ownerId: message.author.id, shortId: player.breedingSlot.pet2Id });
+            const pet1Result = await CommandHelpers.validatePet(message.author.id, player.breedingSlot.pet1Id, prefix);
+            const pet2Result = await CommandHelpers.validatePet(message.author.id, player.breedingSlot.pet2Id, prefix);
+            const pet1 = pet1Result.success ? pet1Result.pet : null;
+            const pet2 = pet2Result.success ? pet2Result.pet : null;
             
             if (!pet1 || !pet2) {
                 // Clear invalid breeding slot
@@ -82,8 +84,8 @@ module.exports = {
                 description += `> Place two pets to start the breeding process.\n`;
                 description += `\nUse \`${prefix}breed add <pet1 id> <pet2 id>\` to place pets.`;
             } else {
-                const pet1Data = allPets[pet1.basePetId];
-                const pet2Data = allPets[pet2.basePetId];
+                const pet1Data = GameData.getPet(pet1.basePetId);
+                const pet2Data = GameData.getPet(pet2.basePetId);
                 
                 if (player.breedingSlot.finishesAt) {
                     const now = new Date();
@@ -119,7 +121,7 @@ module.exports = {
         });
     },
 
-    async handleClaim(message, player, client, prefix) {
+    async handleClaim(message, player, client, prefix, labEffects) {
         if (!player.breedingSlot || !player.breedingSlot.pet1Id || !player.breedingSlot.pet2Id) {
             return message.reply({
                 embeds: [createErrorEmbed("Nothing to Claim", "There are not enough pets in your breeding pen!")]
@@ -155,8 +157,8 @@ module.exports = {
             });
         }
 
-        const pet1Data = allPets[pet1.basePetId];
-        const pet2Data = allPets[pet2.basePetId];
+        const pet1Data = GameData.getPet(pet1.basePetId);
+        const pet2Data = GameData.getPet(pet2.basePetId);
 
         // Check for special breeding combinations
         let eggId = null;
@@ -167,18 +169,22 @@ module.exports = {
         } else {
             // Default breeding - create an egg based on parent types
             const parentTypes = [pet1Data.type, pet2Data.type];
-            if (parentTypes.includes('Beast')) {
-                eggId = 'uncommon_beast_egg';
+            if (parentTypes.includes('Aeonic')) {
+                eggId = 'aeonic_egg';
+            } else if (parentTypes.includes('Abyssal')) {
+                eggId = 'abyssal_egg';
+            } else if (parentTypes.includes('Beast')) {
+                eggId = 'beast_egg';
             } else if (parentTypes.includes('Elemental')) {
-                eggId = 'uncommon_elemental_egg';
+                eggId = 'elemental_egg';
             } else if (parentTypes.includes('Mystic')) {
-                eggId = 'uncommon_mystic_egg';
+                eggId = 'mystic_egg';
             } else if (parentTypes.includes('Undead')) {
-                eggId = 'uncommon_undead_egg';
+                eggId = 'undead_egg';
             } else if (parentTypes.includes('Mechanical')) {
-                eggId = 'uncommon_mechanical_egg';
+                eggId = 'mechanical_egg';
             } else {
-                eggId = 'common_beast_egg'; // Fallback
+                eggId = 'beast_egg'; // Fallback
             }
         }
 
@@ -188,6 +194,15 @@ module.exports = {
             existingEgg.quantity++;
         } else {
             player.inventory.push({ itemId: eggId, quantity: 1 });
+        }
+
+        if (labEffects?.breedingExtraEggChance && Math.random() < labEffects.breedingExtraEggChance) {
+            const bonusEgg = player.inventory.find(item => item.itemId === eggId);
+            if (bonusEgg) {
+                bonusEgg.quantity++;
+            } else {
+                player.inventory.push({ itemId: eggId, quantity: 1 });
+            }
         }
 
         // Set pets back to Idle and clear breeding slot
@@ -202,10 +217,12 @@ module.exports = {
         player.stats.eggsProduced = (player.stats.eggsProduced || 0) + 1;
         await player.save();
 
+        await updateQuestProgress(message.author.id, 'breed_pals', 1);
+
         // Emit achievement event
         client.emit('palsBred', message.author.id);
 
-        const eggItem = allItems[eggId];
+        const eggItem = GameData.getItem(eggId);
         return message.reply({
             embeds: [createSuccessEmbed(
                 "Breeding Complete!", 
@@ -239,8 +256,8 @@ module.exports = {
         player.breedingSlot = { pet1Id: null, pet2Id: null, finishesAt: null };
         await player.save();
 
-        const pet1Data = pet1 ? allPets[pet1.basePetId] : null;
-        const pet2Data = pet2 ? allPets[pet2.basePetId] : null;
+        const pet1Data = pet1 ? GameData.getPet(pet1.basePetId) : null;
+        const pet2Data = pet2 ? GameData.getPet(pet2.basePetId) : null;
 
         return message.reply({
             embeds: [createSuccessEmbed(
@@ -250,7 +267,7 @@ module.exports = {
         });
     },
 
-    async handleAddPets(message, player, shortId1, shortId2, prefix) {
+    async handleAddPets(message, player, shortId1, shortId2, prefix, labEffects) {
         if (player.breedingSlot && (player.breedingSlot.pet1Id || player.breedingSlot.pet2Id)) {
             return message.reply({
                 embeds: [createErrorEmbed(
@@ -296,7 +313,7 @@ module.exports = {
             return message.reply({
                 embeds: [createErrorEmbed(
                     "Pet Unavailable", 
-                    `**${allPets[pet1.basePetId].name} #${pet1.shortId}** is currently ${pet1.status.toLowerCase()} and cannot breed right now.`
+                    `**${GameData.getPet(pet1.basePetId)?.name || 'Unknown'} #${pet1.shortId}** is currently ${pet1.status.toLowerCase()} and cannot breed right now.`
                 )]
             });
         }
@@ -305,7 +322,7 @@ module.exports = {
             return message.reply({
                 embeds: [createErrorEmbed(
                     "Pet Unavailable", 
-                    `**${allPets[pet2.basePetId].name} #${pet2.shortId}** is currently ${pet2.status.toLowerCase()} and cannot breed right now.`
+                    `**${GameData.getPet(pet2.basePetId)?.name || 'Unknown'} #${pet2.shortId}** is currently ${pet2.status.toLowerCase()} and cannot breed right now.`
                 )]
             });
         }
@@ -315,7 +332,7 @@ module.exports = {
             return message.reply({
                 embeds: [createErrorEmbed(
                     "Pet Too Young", 
-                    `**${allPets[pet1.basePetId].name} #${pet1.shortId}** must be at least level 5 to breed (currently level ${pet1.level}).`
+                    `**${GameData.getPet(pet1.basePetId)?.name || 'Unknown'} #${pet1.shortId}** must be at least level 5 to breed (currently level ${pet1.level}).`
                 )]
             });
         }
@@ -324,13 +341,13 @@ module.exports = {
             return message.reply({
                 embeds: [createErrorEmbed(
                     "Pet Too Young", 
-                    `**${allPets[pet2.basePetId].name} #${pet2.shortId}** must be at least level 5 to breed (currently level ${pet2.level}).`
+                    `**${GameData.getPet(pet2.basePetId)?.name || 'Unknown'} #${pet2.shortId}** must be at least level 5 to breed (currently level ${pet2.level}).`
                 )]
             });
         }
 
-        const pet1Data = allPets[pet1.basePetId];
-        const pet2Data = allPets[pet2.basePetId];
+        const pet1Data = GameData.getPet(pet1.basePetId);
+        const pet2Data = GameData.getPet(pet2.basePetId);
 
         // Check for special breeding combinations
         let breedingTime = 240; // Default 4 hours
@@ -349,6 +366,9 @@ module.exports = {
         pet2.status = 'Breeding';
         await pet1.save();
         await pet2.save();
+
+        const timeReduction = Math.min(labEffects?.breedingTimeReduction || 0, 0.9);
+        breedingTime = Math.max(30, Math.round(breedingTime * (1 - timeReduction)));
 
         // Set breeding slot
         const finishTime = new Date(Date.now() + breedingTime * 60 * 1000);
@@ -398,8 +418,8 @@ module.exports = {
         player.breedingSlot = { pet1Id: null, pet2Id: null, finishesAt: null };
         await player.save();
 
-        const pet1Data = pet1 ? allPets[pet1.basePetId] : null;
-        const pet2Data = pet2 ? allPets[pet2.basePetId] : null;
+        const pet1Data = pet1 ? GameData.getPet(pet1.basePetId) : null;
+        const pet2Data = pet2 ? GameData.getPet(pet2.basePetId) : null;
 
         return message.reply({
             embeds: [createSuccessEmbed(
@@ -409,10 +429,10 @@ module.exports = {
         });
     },
 
-    async handleInteractiveMenu(message, player, client, prefix) {
+    async handleInteractiveMenu(message, player, client, prefix, labEffects) {
         if (player.breedingSlot && (player.breedingSlot.pet1Id || player.breedingSlot.pet2Id)) {
             // If there are already pets, just show status
-            return this.handleStatus(message, player, prefix);
+            return this.handleStatus(message, player, prefix, labEffects);
         }
 
         const playerPets = await Pet.find({ 
@@ -432,7 +452,7 @@ module.exports = {
 
         // Create pet selection options (limit to 25 for Discord)
         const petOptions = playerPets.slice(0, 25).map(pet => {
-            const petData = allPets[pet.basePetId];
+            const petData = GameData.getPet(pet.basePetId);
             return {
                 label: `${petData.name} #${pet.shortId} (Lv.${pet.level})`,
                 value: pet.shortId.toString(),
@@ -499,7 +519,7 @@ module.exports = {
                 // Create second pet selection menu (excluding the first pet)
                 const remainingPets = playerPets.filter(pet => pet.shortId !== selectedShortId);
                 const petOptions2 = remainingPets.slice(0, 25).map(pet => {
-                    const petData = allPets[pet.basePetId];
+                    const petData = GameData.getPet(pet.basePetId);
                     return {
                         label: `${petData.name} #${pet.shortId} (Lv.${pet.level})`,
                         value: pet.shortId.toString(),
@@ -527,7 +547,7 @@ module.exports = {
                     new ActionRowBuilder().addComponents(backButton, cancelButton2)
                 ];
 
-                const pet1Data = allPets[selectedPet1.basePetId];
+                const pet1Data = GameData.getPet(selectedPet1.basePetId);
                 await i.update({
                     embeds: [createInfoEmbed(
                         "Select Second Pet", 
@@ -550,8 +570,8 @@ module.exports = {
                 }
 
                 // Start breeding process
-                const pet1Data = allPets[selectedPet1.basePetId];
-                const pet2Data = allPets[selectedPet2.basePetId];
+                const pet1Data = GameData.getPet(selectedPet1.basePetId);
+                const pet2Data = GameData.getPet(selectedPet2.basePetId);
 
                 // Check for special breeding combinations
                 let breedingTime = 480; // Default 8 hours

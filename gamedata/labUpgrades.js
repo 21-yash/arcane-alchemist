@@ -1,18 +1,5 @@
 module.exports = {
     // Brewing Upgrades
-    enhanced_cauldron: {
-        name: 'Enhanced Cauldron',
-        description: 'Reduces brewing time by 25%',
-        type: 'brewing',
-        maxLevel: 3,
-        costs: [500, 1500, 3500],
-        effects: [
-            { level: 1, brewTimeReduction: 0.25 },
-            { level: 2, brewTimeReduction: 0.4 },
-            { level: 3, brewTimeReduction: 0.5 }
-        ]
-    },
-    
     precision_mixer: {
         name: 'Precision Mixer',
         description: 'Increases brewing success rate',
@@ -69,27 +56,6 @@ module.exports = {
         ]
     },
 
-    // Storage Upgrades
-    expanded_storage: {
-        name: 'Expanded Storage',
-        description: 'Increases inventory capacity',
-        type: 'storage',
-        maxLevel: 10,
-        costs: [200, 500, 1000, 2000, 4000, 8000, 15000, 25000, 40000, 60000],
-        effects: [
-            { level: 1, inventorySlots: 10 },
-            { level: 2, inventorySlots: 20 },
-            { level: 3, inventorySlots: 35 },
-            { level: 4, inventorySlots: 50 },
-            { level: 5, inventorySlots: 70 },
-            { level: 6, inventorySlots: 90 },
-            { level: 7, inventorySlots: 115 },
-            { level: 8, inventorySlots: 140 },
-            { level: 9, inventorySlots: 170 },
-            { level: 10, inventorySlots: 200 }
-        ]
-    },
-
     research_station: {
         name: 'Research Station',
         description: 'Generates research points for discovering new recipes',
@@ -127,5 +93,293 @@ module.exports = {
         effects: [
             { level: 1, xpBonus: 0.1, prestigeDisplay: true }
         ]
-    }
+    },
+
+    // Additional Brewing Upgrades
+    ingredient_preserver: {
+        name: 'Ingredient Preserver',
+        description: 'Chance to not consume ingredients when brewing fails',
+        type: 'brewing',
+        maxLevel: 4,
+        costs: [2000, 5000, 12000, 25000],
+        effects: [
+            { level: 1, ingredientSaveChance: 0.15 },
+            { level: 2, ingredientSaveChance: 0.25 },
+            { level: 3, ingredientSaveChance: 0.35 },
+            { level: 4, ingredientSaveChance: 0.5 }
+        ]
+    },
+
+    batch_brewer: {
+        name: 'Batch Brewer',
+        description: 'Allows brewing multiple potions at once with',
+        type: 'brewing',
+        maxLevel: 3,
+        costs: [4000, 12000, 30000],
+        effects: [
+            { level: 1, batchBrewing: { maxBatch: 3 } },
+            { level: 2, batchBrewing: { maxBatch: 5 } },
+            { level: 3, batchBrewing: { maxBatch: 10 } }
+        ]
+    },
+
+    // Additional Incubation Upgrades
+    dual_incubator: {
+        name: 'Dual Incubator',
+        description: 'Allows hatching two eggs simultaneously',
+        type: 'incubation',
+        maxLevel: 3,
+        costs: [10000, 20000, 32000],
+        effects: [
+            { level: 1, additionalHatchingSlot: 1 },
+            { level: 2, additionalHatchingSlot: 3 },
+            { level: 3, additionalHatchingSlot: 5 }
+        ]
+    },
+
+    hatching_booster: {
+        name: 'Hatching Booster',
+        description: 'Increases chance of hatching rare pets from eggs',
+        type: 'incubation',
+        maxLevel: 4,
+        costs: [5000, 15000, 35000, 70000],
+        effects: [
+            { level: 1, rarePetChanceBonus: 0.1 },
+            { level: 2, rarePetChanceBonus: 0.2 },
+            { level: 3, rarePetChanceBonus: 0.3 },
+            { level: 4, rarePetChanceBonus: 0.4 }
+        ]
+    },
+
+    // Additional Breeding Upgrades
+    breeding_accelerator: {
+        name: 'Breeding Accelerator',
+        description: 'Reduces breeding time',
+        type: 'breeding',
+        maxLevel: 4,
+        costs: [3000, 9000, 20000, 45000],
+        effects: [
+            { level: 1, breedingTimeReduction: 0.15 },
+            { level: 2, breedingTimeReduction: 0.25 },
+            { level: 3, breedingTimeReduction: 0.35 },
+            { level: 4, breedingTimeReduction: 0.5 }
+        ]
+    },
+
+    // Resource & Foraging Upgrades
+    foraging_boost: {
+        name: 'Foraging Boost',
+        description: 'Increases item yield from foraging',
+        type: 'resource',
+        maxLevel: 5,
+        costs: [1500, 4000, 10000, 25000, 50000],
+        effects: [
+            { level: 1, forageYieldBonus: 0.2 },
+            { level: 2, forageYieldBonus: 0.35 },
+            { level: 3, forageYieldBonus: 0.5 },
+            { level: 4, forageYieldBonus: 0.65 },
+            { level: 5, forageYieldBonus: 0.8 }
+        ]
+    },
+
+    rare_finder: {
+        name: 'Rare Finder',
+        description: 'Increases chance of finding rare ingredients while foraging',
+        type: 'resource',
+        maxLevel: 4,
+        costs: [4000, 12000, 30000, 70000],
+        effects: [
+            { level: 1, rareItemChanceBonus: 0.1 },
+            { level: 2, rareItemChanceBonus: 0.2 },
+            { level: 3, rareItemChanceBonus: 0.3 },
+            { level: 4, rareItemChanceBonus: 0.4 }
+        ]
+    },
+
+    foraging_cooldown_reducer: {
+        name: 'Foraging Cooldown Reducer',
+        description: 'Reduces foraging cooldown time',
+        type: 'resource',
+        maxLevel: 3,
+        costs: [5000, 15000, 40000],
+        effects: [
+            { level: 1, forageCooldownReduction: 0.2 },
+            { level: 2, forageCooldownReduction: 0.35 },
+            { level: 3, forageCooldownReduction: 0.5 }
+        ]
+    },
+
+    // Stamina & Energy Upgrades
+    stamina_well: {
+        name: 'Stamina Well',
+        description: 'Increases maximum stamina capacity',
+        type: 'stamina',
+        maxLevel: 5,
+        costs: [2000, 6000, 15000, 35000, 75000],
+        effects: [
+            { level: 1, maxStaminaBonus: 20 },
+            { level: 2, maxStaminaBonus: 40 },
+            { level: 3, maxStaminaBonus: 60 },
+            { level: 4, maxStaminaBonus: 80 },
+            { level: 5, maxStaminaBonus: 100 }
+        ]
+    },
+
+    stamina_regenerator: {
+        name: 'Stamina Regenerator',
+        description: 'Increases stamina regeneration rate',
+        type: 'stamina',
+        maxLevel: 4,
+        costs: [3000, 9000, 25000, 60000],
+        effects: [
+            { level: 1, staminaRegenMultiplier: 1.25 },
+            { level: 2, staminaRegenMultiplier: 1.5 },
+            { level: 3, staminaRegenMultiplier: 1.75 },
+            { level: 4, staminaRegenMultiplier: 2.0 }
+        ]
+    },
+
+    // Expedition Upgrades
+    expedition_planner: {
+        name: 'Expedition Planner',
+        description: 'Reduces expedition time and increases success rate',
+        type: 'expedition',
+        maxLevel: 4,
+        costs: [4000, 12000, 30000, 70000],
+        effects: [
+            { level: 1, expeditionTimeReduction: 0.1, successRateBonus: 0.05 },
+            { level: 2, expeditionTimeReduction: 0.2, successRateBonus: 0.1 },
+            { level: 3, expeditionTimeReduction: 0.3, successRateBonus: 0.15 },
+            { level: 4, expeditionTimeReduction: 0.4, successRateBonus: 0.2 }
+        ]
+    },
+
+    expedition_rewards_boost: {
+        name: 'Expedition Rewards Boost',
+        description: 'Increases rewards from expeditions',
+        type: 'expedition',
+        maxLevel: 5,
+        costs: [5000, 15000, 35000, 75000, 150000],
+        effects: [
+            { level: 1, expeditionRewardMultiplier: 1.15 },
+            { level: 2, expeditionRewardMultiplier: 1.3 },
+            { level: 3, expeditionRewardMultiplier: 1.45 },
+            { level: 4, expeditionRewardMultiplier: 1.6 },
+            { level: 5, expeditionRewardMultiplier: 1.75 }
+        ]
+    },
+
+    expedition_safety_net: {
+        name: 'Expedition Safety Net',
+        description: 'Reduces chance of Pals getting injured or lost on expeditions',
+        type: 'expedition',
+        maxLevel: 3,
+        costs: [6000, 20000, 50000],
+        effects: [
+            { level: 1, injuryChanceReduction: 0.2, lostChanceReduction: 0.3 },
+            { level: 2, injuryChanceReduction: 0.35, lostChanceReduction: 0.5 },
+            { level: 3, injuryChanceReduction: 0.5, lostChanceReduction: 0.7 }
+        ]
+    },
+
+    // Combat & Equipment Upgrades
+    combat_training_ground: {
+        name: 'Combat Training Ground',
+        description: 'Pals gain more XP from battles and dungeons',
+        type: 'combat',
+        maxLevel: 5,
+        costs: [3000, 10000, 25000, 60000, 120000],
+        effects: [
+            { level: 1, battleXpBonus: 0.15 },
+            { level: 2, battleXpBonus: 0.3 },
+            { level: 3, battleXpBonus: 0.45 },
+            { level: 4, battleXpBonus: 0.6 },
+            { level: 5, battleXpBonus: 0.75 }
+        ]
+    },
+
+    // Gold & Economy Upgrades
+    gold_magnet: {
+        name: 'Gold Magnet',
+        description: 'Increases gold earned from all activities',
+        type: 'economy',
+        maxLevel: 5,
+        costs: [2000, 6000, 15000, 35000, 75000],
+        effects: [
+            { level: 1, goldEarnedBonus: 0.1 },
+            { level: 2, goldEarnedBonus: 0.2 },
+            { level: 3, goldEarnedBonus: 0.3 },
+            { level: 4, goldEarnedBonus: 0.4 },
+            { level: 5, goldEarnedBonus: 0.5 }
+        ]
+    },
+
+    merchant_connection: {
+        name: 'Merchant Connection',
+        description: 'Better prices when selling items to shops',
+        type: 'economy',
+        maxLevel: 4,
+        costs: [4000, 12000, 30000, 70000],
+        effects: [
+            { level: 1, sellPriceBonus: 0.1 },
+            { level: 2, sellPriceBonus: 0.2 },
+            { level: 3, sellPriceBonus: 0.3 },
+            { level: 4, sellPriceBonus: 0.4 }
+        ]
+    },
+
+    // Quality of Life Upgrades
+    recipe_scanner: {
+        name: 'Recipe Scanner',
+        description: 'Increases chance of discovering new recipes',
+        type: 'research',
+        maxLevel: 4,
+        costs: [3500, 10000, 25000, 60000],
+        effects: [
+            { level: 1, recipeDiscoveryChance: 0.05 },
+            { level: 2, recipeDiscoveryChance: 0.1 },
+            { level: 3, recipeDiscoveryChance: 0.15 },
+            { level: 4, recipeDiscoveryChance: 0.2 }
+        ]
+    },
+
+    quick_access_panel: {
+        name: 'Quick Access Panel',
+        description: 'Reduces cooldowns on common actions',
+        type: 'utility',
+        maxLevel: 3,
+        costs: [6000, 20000, 50000],
+        effects: [
+            { level: 1, globalCooldownReduction: 0.1 },
+            { level: 2, globalCooldownReduction: 0.2 },
+            { level: 3, globalCooldownReduction: 0.3 }
+        ]
+    },
+
+    // Advanced Upgrades
+    arcane_reactor: {
+        name: 'Arcane Reactor',
+        description: 'Generates arcane dust over time',
+        type: 'resource',
+        maxLevel: 5,
+        costs: [10000, 30000, 70000, 150000, 300000],
+        effects: [
+            { level: 1, arcaneDustGeneration: { amount: 1, interval: 180 } },
+            { level: 2, arcaneDustGeneration: { amount: 2, interval: 150 } },
+            { level: 3, arcaneDustGeneration: { amount: 4, interval: 120 } },
+            { level: 4, arcaneDustGeneration: { amount: 6, interval: 90 } },
+            { level: 5, arcaneDustGeneration: { amount: 10, interval: 60 } }
+        ]
+    },
+
+    master_alchemist_table: {
+        name: 'Master Alchemist Table',
+        description: 'Unlocks advanced brewing techniques and special recipes',
+        type: 'brewing',
+        maxLevel: 1,
+        costs: [50000],
+        effects: [
+            { level: 1, advancedRecipesUnlocked: true, specialBrewingEnabled: true }
+        ]
+    },
 };

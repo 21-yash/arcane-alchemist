@@ -14,17 +14,17 @@ module.exports = {
             top_10: {
                 gold: 5000,
                 xp: 2500,
-                items: [{ itemId: 'legendary_beast_egg', quantity: 1 }]
+                items: [{ itemId: 'beast_egg', quantity: 2 }]
             },
             top_25_percent: {
                 gold: 2000,
                 xp: 1000,
-                items: [{ itemId: 'epic_elemental_egg', quantity: 1 }]
+                items: [{ itemId: 'elemental_egg', quantity: 1 }]
             },
             participant: {
                 gold: 500,
                 xp: 300,
-                items: [{ itemId: 'rare_beast_egg', quantity: 1 }]
+                items: [{ itemId: 'beast_egg', quantity: 1 }]
             }
         },
         finalBlowReward: {
@@ -47,17 +47,23 @@ module.exports = {
             top_10: {
                 gold: 6000,
                 xp: 3000,
-                items: [{ itemId: 'celestial_fragment', quantity: 3 }]
+                items: [
+                    { itemId: 'celestial_fragment', quantity: 3 },
+                    { itemId: 'aeonic_egg', quantity: 1 }
+                ]
             },
             top_25_percent: {
                 gold: 2500,
                 xp: 1200,
-                items: [{ itemId: 'fire_bloom', quantity: 1 }]
+                items: [
+                    { itemId: 'fire_bloom', quantity: 1 },
+                    { itemId: 'aeonic_egg', quantity: 1 }
+                ]
             },
             participant: {
                 gold: 600,
                 xp: 400,
-                items: [{ itemId: 'epic_elemental_egg', quantity: 1 }]
+                items: [{ itemId: 'aeonic_egg', quantity: 1 }]
             }
         },
         finalBlowReward: {
@@ -80,17 +86,20 @@ module.exports = {
             top_10: {
                 gold: 4000,
                 xp: 2000,
-                items: [{ itemId: 'legendary_undead_egg', quantity: 1 }]
+                items: [{ itemId: 'abyssal_egg', quantity: 2 }]
             },
             top_25_percent: {
                 gold: 1800,
                 xp: 900,
-                items: [{ itemId: 'nightmare_orb', quantity: 1 }]
+                items: [
+                    { itemId: 'nightmare_orb', quantity: 1 },
+                    { itemId: 'abyssal_egg', quantity: 1 }
+                ]
             },
             participant: {
                 gold: 450,
                 xp: 250,
-                items: [{ itemId: 'epic_undead_egg', quantity: 1 }]
+                items: [{ itemId: 'abyssal_egg', quantity: 1 }]
             }
         },
         finalBlowReward: {
