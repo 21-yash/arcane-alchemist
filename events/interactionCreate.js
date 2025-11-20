@@ -4,7 +4,7 @@ const config = require('../config/config.json');
 module.exports = {
     name: 'interactionCreate',
     async execute(interaction, client) {
-        if (!interaction.isChatInputCommand() || !interaction.isContextMenuCommand()) return;
+        if (!interaction.isChatInputCommand() && !interaction.isContextMenuCommand()) return;
 
         const command = client.slashCommands.get(interaction.commandName);
         if (!command) return;
