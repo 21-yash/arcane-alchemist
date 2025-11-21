@@ -23,7 +23,7 @@ const {
     EquipmentManager,
     StatManager,
     COMBAT_CONFIG
-} = require("../../utils/combat2");
+} = require("../../utils/combat");
 const { StatusEffectManager } = require("../../utils/statusEffects");
 
 // Enhanced battle session management with better error handling
@@ -170,7 +170,7 @@ class BattleValidator {
 }
 
 module.exports = {
-    name: "battle2",
+    name: "battle",
     description: "Challenge another player to a Pal battle!",
     usage: "<@user> | add <pet_id>",
     aliases: ["fight", "duel", "pvp"],
@@ -821,7 +821,7 @@ module.exports = {
                 
                 if (challengerHp <= 0 || opponentHp <= 0) break;
                 
-                const { TurnOrderManager } = require("../../utils/combat2");
+                const { TurnOrderManager } = require("../../utils/combat");
                 const turnOrder = TurnOrderManager.calculate(
                     enhancedChallengerPal,
                     enhancedOpponentPal,
@@ -1076,7 +1076,7 @@ module.exports = {
             let counterStatusEffects = [];
             
             // Process defensive equipment effects
-            const { EquipmentEffectProcessor } = require("../../utils/combat2");
+            const { EquipmentEffectProcessor } = require("../../utils/combat");
             const defensiveResult = EquipmentEffectProcessor.processDefensive(
                 defender, defenderEquipmentEffects, defenderName, totalDamage, combatEngine.logger
             );

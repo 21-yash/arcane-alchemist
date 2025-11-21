@@ -46,20 +46,18 @@ class LabManager {
 
     static calculateEffects(lab) {
         const effects = {
-            brewingSuccessBonus: 0,
+            successRateBonus: 0,
             ingredientSaveChance: 0,
             maxBatch: DEFAULT_BATCH_LIMIT,
             autoBrewer: null,
             hatchTimeReduction: 0,
-            additionalHatchingSlots: 0,
+            additionalHatchingSlot: 0,
             rarePetChanceBonus: 0,
             breedingExtraEggChance: 0,
             breedingTimeReduction: 0,
-            breedingSuccessBonus: 0,
             researchGeneration: null,
             healingSpeedMultiplier: 1,
             playerXpBonus: 0,
-            forageYieldBonus: 0,
             rareItemChanceBonus: 0,
             forageCooldownReduction: 0,
             maxStaminaBonus: 0,
@@ -72,11 +70,8 @@ class LabManager {
             palXpBonus: 0,
             goldEarnedBonus: 0,
             shopSellBonus: 0,
-            shopDiscount: 0,
-            recipeDiscoveryChance: 0,
             globalCooldownReduction: 0,
             arcaneDustGeneration: null,
-            advancedRecipesUnlocked: false,
             prestigeDisplay: false
         };
 
@@ -93,7 +88,7 @@ class LabManager {
 
             switch (entry.upgradeId) {
                 case 'precision_mixer':
-                    effects.brewingSuccessBonus = levelEffect.successRateBonus || 0;
+                    effects.successRateBonus = levelEffect.successRateBonus || 0;
                     break;
                 case 'ingredient_preserver':
                     effects.ingredientSaveChance = levelEffect.ingredientSaveChance || 0;
@@ -108,13 +103,13 @@ class LabManager {
                     effects.hatchTimeReduction = levelEffect.hatchTimeReduction || 0;
                     break;
                 case 'dual_incubator':
-                    effects.additionalHatchingSlots = levelEffect.additionalHatchingSlot || 0;
+                    effects.additionalHatchingSlot = levelEffect.additionalHatchingSlot || 0;
                     break;
                 case 'hatching_booster':
                     effects.rarePetChanceBonus = levelEffect.rarePetChanceBonus || 0;
                     break;
                 case 'fertility_enhancer':
-                    effects.breedingExtraEggChance = levelEffect.breedingSuccessBonus || 0;
+                    effects.breedingExtraEggChance = levelEffect.breedingExtraEggChance || 0;
                     break;
                 case 'breeding_accelerator':
                     effects.breedingTimeReduction = levelEffect.breedingTimeReduction || 0;
@@ -128,9 +123,6 @@ class LabManager {
                 case 'trophy_case':
                     effects.playerXpBonus = levelEffect.xpBonus || effects.playerXpBonus;
                     effects.prestigeDisplay = levelEffect.prestigeDisplay || false;
-                    break;
-                case 'foraging_boost':
-                    effects.forageYieldBonus = levelEffect.forageYieldBonus || 0;
                     break;
                 case 'rare_finder':
                     effects.rareItemChanceBonus = levelEffect.rareItemChanceBonus || 0;
@@ -146,7 +138,7 @@ class LabManager {
                     break;
                 case 'expedition_planner':
                     effects.expeditionTimeReduction = levelEffect.expeditionTimeReduction || 0;
-                    effects.expeditionSuccessBonus = levelEffect.successRateBonus || effects.expeditionSuccessBonus;
+                    effects.expeditionSuccessBonus = levelEffect.expeditionSuccessBonus || effects.expeditionSuccessBonus;
                     break;
                 case 'expedition_rewards_boost':
                     effects.expeditionRewardMultiplier = levelEffect.expeditionRewardMultiplier || effects.expeditionRewardMultiplier;
@@ -163,19 +155,12 @@ class LabManager {
                     break;
                 case 'merchant_connection':
                     effects.shopSellBonus = levelEffect.sellPriceBonus || 0;
-                    effects.shopDiscount = levelEffect.sellPriceBonus || 0;
-                    break;
-                case 'recipe_scanner':
-                    effects.recipeDiscoveryChance = levelEffect.recipeDiscoveryChance || 0;
                     break;
                 case 'quick_access_panel':
                     effects.globalCooldownReduction = levelEffect.globalCooldownReduction || 0;
                     break;
                 case 'arcane_reactor':
                     effects.arcaneDustGeneration = levelEffect.arcaneDustGeneration;
-                    break;
-                case 'master_alchemist_table':
-                    effects.advancedRecipesUnlocked = !!levelEffect.advancedRecipesUnlocked;
                     break;
                 default:
                     break;
@@ -440,7 +425,7 @@ class LabManager {
     }
 
     static ensureLabHatchingSlots(player, effects) {
-        const extraSlots = effects.additionalHatchingSlots || 0;
+        const extraSlots = effects.additionalHatchingSlot || 0;
         if (!player.labHatchingSlots) {
             player.labHatchingSlots = [];
         }
@@ -462,7 +447,7 @@ class LabManager {
     }
 
     static getExtraHatchingSlots(effects) {
-        return effects?.additionalHatchingSlots || 0;
+        return effects?.additionalHatchingSlot || 0;
     }
 }
 

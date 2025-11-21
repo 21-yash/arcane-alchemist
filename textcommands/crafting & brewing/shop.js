@@ -344,7 +344,7 @@ module.exports = {
                 const item = GameData.getItem(itemId);
                 const itemEmoji = CommandHelpers.getItemEmoji(itemId);
                 const basePrice = (item.rarity === "Common" ? 10 : 20) * SHOP_CONFIG.priceMultiplier;
-                const price = Math.max(1, Math.floor(basePrice * (1 - (labEffects?.shopDiscount || 0))));
+                const price = basePrice;
                 shopDescription += `> ${itemEmoji} **${item.name}** - \`${price}\` Dust\n`;
             });
 
@@ -361,7 +361,7 @@ module.exports = {
 
             availableScrolls.forEach((scrollId) => {
                 const scroll = RECIPE_SCROLLS[scrollId];
-                const price = Math.max(1, Math.floor(scroll.price * (1 - (labEffects?.shopDiscount || 0))));
+                const price = scroll.price;
                 shopDescription += `> ${CommandHelpers.getItemEmoji("scroll")} **${scroll.name}** - \`${price}\` Gold\n`;
             });
 
@@ -388,7 +388,7 @@ module.exports = {
                 const ingredientOptions = dailyDeals.map((itemId) => {
                     const item = GameData.getItem(itemId);
                     const basePrice = (item.rarity === "Common" ? 10 : 20) * SHOP_CONFIG.priceMultiplier;
-                    const price = Math.max(1, Math.floor(basePrice * (1 - (labEffects?.shopDiscount || 0))));
+                    const price = basePrice;
                     return {
                         label: item.name,
                         description: `${item.description.substring(0, 80)} - ${price} Dust`,
@@ -410,7 +410,7 @@ module.exports = {
             if (availableScrolls.length > 0) {
                 const scrollOptions = availableScrolls.map((scrollId) => {
                     const scroll = RECIPE_SCROLLS[scrollId];
-                    const price = Math.max(1, Math.floor(scroll.price * (1 - (labEffects?.shopDiscount || 0))));
+                    const price = scroll.price;
                     return {
                         label: scroll.name,
                         description: `${scroll.description.substring(0, 80)} - ${price} Gold`,
@@ -456,7 +456,7 @@ module.exports = {
                         const itemId = interaction.values[0];
                         const item = GameData.getItem(itemId);
                         const basePrice = (item.rarity === "Common" ? 10 : 20) * SHOP_CONFIG.priceMultiplier;
-                        const price = Math.max(1, Math.floor(basePrice * (1 - (labEffects?.shopDiscount || 0))));
+                        const price = basePrice;
 
                         if (currentPlayer.arcaneDust < price) {
                             return interaction.followUp({
@@ -498,7 +498,7 @@ module.exports = {
                     } else if (interaction.customId === "buy_scroll") {
                         const scrollId = interaction.values[0];
                         const scroll = RECIPE_SCROLLS[scrollId];
-                        const scrollPrice = Math.max(1, Math.floor(scroll.price * (1 - (labEffects?.shopDiscount || 0))));
+                        const scrollPrice = scroll.price;
 
                         if (currentPlayer.gold < scrollPrice) {
                             return interaction.followUp({

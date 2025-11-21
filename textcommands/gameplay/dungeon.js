@@ -21,7 +21,7 @@ const {
     EquipmentManager,
     Utils,
     StatManager
-} = require("../../utils/combat2");
+} = require("../../utils/combat");
 const { grantPalXp } = require("../../utils/leveling");
 const { restorePetHp } = require("../../utils/stamina");
 const LabManager = require('../../utils/labManager');
@@ -492,7 +492,7 @@ class UIManager {
 const sessionManager = new DungeonSessionManager();
 
 module.exports = {
-    name: "dungeon2",
+    name: "dungeon",
     description: "Embark on an expedition into a dangerous dungeon with one of your Pals.",
     usage: "[dungeon name] | quick",
     

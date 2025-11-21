@@ -9,6 +9,9 @@ const LabManager = require('../../utils/labManager');
 
 const activeBrewingSessions = new Set();
 
+// Base success rate for brewing (70%)
+const BASE_BREWING_SUCCESS_RATE = 0.70;
+
 /**
  * Input sanitizer and validator
  */
@@ -307,6 +310,23 @@ class RecipeHandler {
 }
 
 /**
+ * Calculate brewing success rate
+ * @param {Object} labEffects - Lab effects object
+ * @returns {number} Success rate (0-1)
+ */
+function calculateSuccessRate(labEffects) {
+    let successRate = BASE_BREWING_SUCCESS_RATE;
+    
+    // Add lab bonus if available
+    if (labEffects?.successRateBonus) {
+        successRate += labEffects.successRateBonus;
+    }
+    
+    // Cap at 100%
+    return Math.min(successRate, 1.0);
+}
+
+/**
  * Get player ingredients filtered by type
  * @param {Object} player - Player object
  * @returns {Array} Available ingredients for UI
@@ -355,6 +375,7 @@ module.exports = {
             const labEffects = labContext.effects;
             const lab = labContext.lab;
             const maxBatch = LabManager.getMaxBrewBatch(labEffects);
+            const successRate = calculateSuccessRate(labEffects);
 
             const ingredients = getPlayerIngredients(player);
             if (ingredients.length === 0) {
@@ -395,10 +416,17 @@ module.exports = {
              */
             const createCauldronEmbed = () => {
                 let description = `Enter ingredients in format: **quantity ingredient_name, quantity ingredient_name**\nExample: \`2 moonpetal_herb, 1 crystal_shard\`\n\nTo brew multiple potions, add **x[number]** at the end:\nExample: \`2 moonpetal_herb, 1 crystal_shard x3\`\n\n`;
-                description += `Max batch size: **${maxBatch}** potion${maxBatch === 1 ? '' : 's'} per brew.\n\n`;
-
-                // Show available recipes count
-                description += `📚 **Known Recipes:** ${availableRecipes.length}\n`;
+                description += `Max batch size: **${maxBatch}** potion${maxBatch === 1 ? '' : 's'} per brew.\n`;
+                description += `Base Success Rate: **${(BASE_BREWING_SUCCESS_RATE * 100).toFixed(0)}%**\n`;
+                description += `Current Success Rate: **${(successRate * 100).toFixed(0)}%**`;
+                
+                if (labEffects?.successRateBonus) {
+                    description += ` (+${(labEffects.successRateBonus * 100).toFixed(0)}% from lab)\n`;
+                } else {
+                    description += `\n`;
+                }
+                
+                description += `\n📚 **Known Recipes:** ${availableRecipes.length}\n`;
 
                 if (Object.keys(selectedIngredients).length > 0) {
                     description += `\n**Selected Ingredients:**\n`;
@@ -423,8 +451,9 @@ module.exports = {
                     if (matchResult.hasMatch) {
                         const resultItem = GameData.getItem(matchResult.recipe.result.itemId);
                         description += `\n✅ **Recipe Match Found!**\n> Will create: ${resultItem.name} x${matchResult.recipe.result.quantity * brewQuantity}`;
+                        description += `\n> Success Chance: **${(successRate * 100).toFixed(0)}%** per brew`;
                     } else {
-                        description += `\n❌ **No Recipe Match** - Ingredients will be consumed for Arcane Dust`;
+                        description += `\n❌ **No Recipe Match**`;
                     }
                 }
 
@@ -454,11 +483,6 @@ module.exports = {
                         .setLabel("Clear All")
                         .setStyle(ButtonStyle.Secondary)
                         .setDisabled(!hasIngredients),
-                    new ButtonBuilder()
-                        .setCustomId("brew_recipes")
-                        .setLabel("Show Recipes")
-                        .setStyle(ButtonStyle.Primary)
-                        .setEmoji("📚"),
                     new ButtonBuilder()
                         .setCustomId("brew_cancel")
                         .setLabel("Cancel")
@@ -529,13 +553,6 @@ module.exports = {
                     embeds: [createCauldronEmbed()],
                     components: createComponents()
                 });
-
-                // Attempt to delete user's input message (ignore errors)
-                try {
-                    await m.delete();
-                } catch (e) {
-                    // Ignore deletion errors (insufficient permissions, etc.)
-                }
             });
 
             componentCollector.on("collect", async (i) => {
@@ -567,32 +584,6 @@ module.exports = {
                         componentCollector.stop();
                         break;
 
-                    case "brew_recipes":
-                        // Show available recipes
-                        let recipesText = "**Your Known Recipes:**\n";
-                        availableRecipes.forEach(recipeId => {
-                            const recipe = GameData.recipes[recipeId];
-                            if (recipe) {
-                                const resultItem = GameData.getItem(recipe.result.itemId);
-                                recipesText += `\n**${resultItem.name}** (${recipe.result.quantity}x)\n`;
-                                recipesText += `Ingredients: ${recipe.ingredients.map(ing => {
-                                    const item = GameData.getItem(ing.itemId);
-                                    const itemEmoji = CommandHelpers.getItemEmoji(ing.itemId);
-                                    return `${itemEmoji} ${item.name} x${ing.quantity}`;
-                                }).join(', ')}\n`;
-                            }
-                        });
-
-                        if (recipesText.length > 4000) {
-                            recipesText = recipesText.substring(0, 3900) + "\n...(truncated)";
-                        }
-
-                        await i.reply({
-                            embeds: [createInfoEmbed("Known Recipes", recipesText)],
-                            ephemeral: true
-                        });
-                        break;
-
                     case "brew_confirm":
                         if (Object.keys(selectedIngredients).length === 0) {
                             await i.reply({
@@ -621,7 +612,8 @@ module.exports = {
                             matchResult,
                             client,
                             message,
-                            labEffects
+                            labEffects,
+                            successRate
                         );
 
                         await i.update({
@@ -690,58 +682,74 @@ module.exports = {
      * @param {Object} matchResult - Recipe match result
      * @param {Object} client - Discord client
      * @param {Object} message - Discord message
+     * @param {Object} labEffects - Lab effects
+     * @param {number} successRate - Calculated success rate
      * @returns {Object} Brewing result
      */
-    async executeBrewing(player, ingredients, brewQuantity, matchResult, client, message, labEffects = null) {
+    async executeBrewing(player, ingredients, brewQuantity, matchResult, client, message, labEffects = null, successRate = BASE_BREWING_SUCCESS_RATE) {
         try {
-            if (matchResult.hasMatch) {
-                // Successful brewing
-                const recipe = matchResult.recipe;
-                const recipeId = matchResult.recipeId;
+            const recipe = matchResult.recipe;
+            const recipeId = matchResult.recipeId;
 
-                // Update statistics
-                player.stats.potionsBrewed = (player.stats.potionsBrewed || 0) + brewQuantity;
+            // Track successes and failures
+            let successfulBrews = 0;
+            let failedBrews = 0;
 
-                // Grant XP
-                const totalXp = recipe.xp * brewQuantity;
-                await grantPlayerXp(client, message, player.userId, totalXp, { labEffects });
-                let newlyDiscoveredRecipe = null;
-
-                // Ensure recipe is in grimoire (should already be there)
-                if (!player.grimoire.includes(recipeId)) {
-                    player.grimoire.push(recipeId);
+            // Perform each brew attempt
+            for (let i = 0; i < brewQuantity; i++) {
+                const roll = Math.random();
+                if (roll < successRate) {
+                    successfulBrews++;
+                } else {
+                    failedBrews++;
                 }
+            }
 
-                // Consume ingredients
+            // Update statistics
+            player.stats.potionsBrewed = (player.stats.potionsBrewed || 0) + successfulBrews;
+
+            // Calculate total XP (only for successful brews)
+            const totalXp = recipe.xp * successfulBrews;
+            if (totalXp > 0) {
+                await grantPlayerXp(client, message, player.userId, totalXp, { labEffects });
+            }
+
+            // Ensure recipe is in grimoire
+            if (!player.grimoire.includes(recipeId)) {
+                player.grimoire.push(recipeId);
+            }
+
+            // Consume all ingredients (success or fail, ingredients are used)
+            recipe.ingredients.forEach(ing => {
+                const playerItem = player.inventory.find(item => item.itemId === ing.itemId);
+                if (playerItem) {
+                    playerItem.quantity -= ing.quantity * brewQuantity;
+                }
+            });
+
+            // Apply ingredient save chance for failed brews (preserves ingredients)
+            if (failedBrews > 0 && labEffects?.ingredientSaveChance) {
                 recipe.ingredients.forEach(ing => {
-                    const playerItem = player.inventory.find(item => item.itemId === ing.itemId);
-                    if (playerItem) {
-                        playerItem.quantity -= ing.quantity * brewQuantity;
-                    }
-                });
-
-                if (labEffects?.ingredientSaveChance) {
-                    recipe.ingredients.forEach(ing => {
+                    for (let i = 0; i < failedBrews; i++) {
                         if (Math.random() < labEffects.ingredientSaveChance) {
                             const playerItem = player.inventory.find(item => item.itemId === ing.itemId);
                             if (playerItem) {
-                                playerItem.quantity += ing.quantity * brewQuantity;
+                                playerItem.quantity += ing.quantity;
                             } else {
                                 player.inventory.push({
                                     itemId: ing.itemId,
-                                    quantity: ing.quantity * brewQuantity
+                                    quantity: ing.quantity
                                 });
                             }
                         }
-                    });
-                }
+                    }
+                });
+            }
 
-                // Add result items
-                let totalResultQuantity = recipe.result.quantity * brewQuantity;
-                if (labEffects?.brewingSuccessBonus) {
-                    const bonusMultiplier = 1 + labEffects.brewingSuccessBonus;
-                    totalResultQuantity = Math.max(recipe.result.quantity, Math.round(totalResultQuantity * bonusMultiplier));
-                }
+            // Add result items for successful brews
+            if (successfulBrews > 0) {
+                let totalResultQuantity = recipe.result.quantity * successfulBrews;
+                
                 const resultItem = player.inventory.find(item => item.itemId === recipe.result.itemId);
                 
                 if (resultItem) {
@@ -753,61 +761,60 @@ module.exports = {
                     });
                 }
 
-                // Clean up empty inventory slots
-                player.inventory = player.inventory.filter(item => item.quantity > 0);
-
-                if (labEffects?.recipeDiscoveryChance && Math.random() < labEffects.recipeDiscoveryChance) {
-                    newlyDiscoveredRecipe = discoverNewBrewingRecipe(player, labEffects?.advancedRecipesUnlocked);
-                }
-
-                await player.save();
-
-                // Emit events
-                for (let i = 0; i < brewQuantity; i++) {
+                // Emit events for successful brews
+                for (let i = 0; i < successfulBrews; i++) {
                     client.emit("potionBrewed", message.author.id);
                     await updateQuestProgress(message.author.id, 'brew_potions', 1);
                 }
+            }
 
-                const resultItemData = GameData.getItem(recipe.result.itemId);
-                let successMsg = `You successfully brewed **${totalResultQuantity}x ${resultItemData.name}**!`;
-                
-                if (brewQuantity > 1) {
-                    successMsg += ` (${brewQuantity} batches)`;
-                }
-                if (newlyDiscoveredRecipe) {
-                    successMsg += `\n\n📘 You discovered a new recipe: **${newlyDiscoveredRecipe}**!`;
-                }
-
-                return {
-                    embed: createSuccessEmbed("Brewing Success!", successMsg)
-                };
-
-            } else {
-                // Failed brewing - consume ingredients, grant arcane dust
-                Object.entries(ingredients).forEach(([itemId, quantity]) => {
-                    const playerItem = player.inventory.find(item => item.itemId === itemId);
-                    if (playerItem) {
-                        playerItem.quantity -= quantity * brewQuantity;
-                    }
-                });
-
-                // Clean up empty inventory slots
-                player.inventory = player.inventory.filter(item => item.quantity > 0);
-
-                // Grant arcane dust
-                const totalDust = Object.keys(ingredients).length * brewQuantity;
+            // Grant arcane dust for failed brews
+            let totalDust = 0;
+            if (failedBrews > 0) {
+                totalDust = Object.keys(ingredients).length * failedBrews;
                 player.arcaneDust = (player.arcaneDust || 0) + totalDust;
+            }
 
-                await player.save();
+            // Clean up empty inventory slots
+            player.inventory = player.inventory.filter(item => item.quantity > 0);
 
-                let failureMsg = `The ingredients fizzled into a useless concoction. You salvaged **${totalDust} Arcane Dust** from the failure.`;
+            await player.save();
+
+            // Create result message
+            const resultItemData = GameData.getItem(recipe.result.itemId);
+            let resultMsg = "";
+
+            if (successfulBrews > 0 && failedBrews > 0) {
+                // Mixed results
+                const totalResultQuantity = recipe.result.quantity * successfulBrews;
+
+                resultMsg = `Mixed results! **${successfulBrews}** successful, **${failedBrews}** failed.\n\n`;
+                resultMsg += `✅ Created **${totalResultQuantity}x ${resultItemData.name}**!\n`;
+                resultMsg += `❌ Salvaged **${totalDust} Arcane Dust** from failures.`;
+
+                return {
+                    embed: createInfoEmbed("Brewing Complete", resultMsg)
+                };
+            } else if (successfulBrews > 0) {
+                // All successful
+                let totalResultQuantity = recipe.result.quantity * successfulBrews;
+                
+                resultMsg = `You successfully brewed **${totalResultQuantity}x ${resultItemData.name}**!`;
                 
                 if (brewQuantity > 1) {
-                    failureMsg += ` (${brewQuantity} failed attempts)`;
+                    resultMsg += ` (${successfulBrews} successful batches)`;
                 }
 
                 return {
-                    embed: createErrorEmbed("Brewing Failed!", failureMsg)
+                    embed: createSuccessEmbed("Brewing Success!", resultMsg)
+                };
+            } else {
+                // All failed
+                resultMsg = `All ${failedBrews} brewing attempt${failedBrews > 1 ? 's' : ''} failed! The ingredients fizzled into useless concoctions.\n\n`;
+                resultMsg += `You salvaged **${totalDust} Arcane Dust** from the failures.`;
+
+                return {
+                    embed: createErrorEmbed("Brewing Failed!", resultMsg)
                 };
             }
 
@@ -822,33 +829,3 @@ module.exports = {
         }
     }
 };
-
-function discoverNewBrewingRecipe(player, allowAdvanced = false) {
-    const allRecipes = GameData.recipes || {};
-    const unknown = Object.entries(allRecipes).filter(([recipeId, recipeData]) => {
-        if (!recipeData?.result?.itemId) return false;
-        const item = GameData.getItem(recipeData.result.itemId);
-        if (!item || item.source !== 'brewing') return false;
-        if (!allowAdvanced && isAdvancedRecipe(recipeData)) {
-            return false;
-        }
-        return !player.grimoire.includes(recipeId);
-    });
-
-    if (!unknown.length) {
-        return null;
-    }
-
-    const [recipeId, recipeData] = unknown[Math.floor(Math.random() * unknown.length)];
-    player.grimoire.push(recipeId);
-    player.markModified?.('grimoire');
-    const itemData = GameData.getItem(recipeData.result.itemId);
-    return itemData?.name || recipeId;
-}
-
-function isAdvancedRecipe(recipeData) {
-    const item = GameData.getItem(recipeData.result.itemId);
-    if (!item) return false;
-    const highRarity = item.rarity && ['Epic', 'Legendary'].includes(item.rarity);
-    return highRarity || recipeData.level >= 10;
-}

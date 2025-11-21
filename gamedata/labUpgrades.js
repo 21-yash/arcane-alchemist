@@ -50,9 +50,9 @@ module.exports = {
         maxLevel: 3,
         costs: [2500, 7500, 18000],
         effects: [
-            { level: 1, breedingSuccessBonus: 0.15 },
-            { level: 2, breedingSuccessBonus: 0.25 },
-            { level: 3, breedingSuccessBonus: 0.35 }
+            { level: 1, breedingExtraEggChance: 0.05 },
+            { level: 2, breedingExtraEggChance: 0.1 },
+            { level: 3, breedingExtraEggChance: 0.2 }
         ]
     },
 
@@ -167,21 +167,6 @@ module.exports = {
     },
 
     // Resource & Foraging Upgrades
-    foraging_boost: {
-        name: 'Foraging Boost',
-        description: 'Increases item yield from foraging',
-        type: 'resource',
-        maxLevel: 5,
-        costs: [1500, 4000, 10000, 25000, 50000],
-        effects: [
-            { level: 1, forageYieldBonus: 0.2 },
-            { level: 2, forageYieldBonus: 0.35 },
-            { level: 3, forageYieldBonus: 0.5 },
-            { level: 4, forageYieldBonus: 0.65 },
-            { level: 5, forageYieldBonus: 0.8 }
-        ]
-    },
-
     rare_finder: {
         name: 'Rare Finder',
         description: 'Increases chance of finding rare ingredients while foraging',
@@ -247,10 +232,10 @@ module.exports = {
         maxLevel: 4,
         costs: [4000, 12000, 30000, 70000],
         effects: [
-            { level: 1, expeditionTimeReduction: 0.1, successRateBonus: 0.05 },
-            { level: 2, expeditionTimeReduction: 0.2, successRateBonus: 0.1 },
-            { level: 3, expeditionTimeReduction: 0.3, successRateBonus: 0.15 },
-            { level: 4, expeditionTimeReduction: 0.4, successRateBonus: 0.2 }
+            { level: 1, expeditionTimeReduction: 0.1, expeditionSuccessBonus: 0.05 },
+            { level: 2, expeditionTimeReduction: 0.2, expeditionSuccessBonus: 0.1 },
+            { level: 3, expeditionTimeReduction: 0.3, expeditionSuccessBonus: 0.15 },
+            { level: 4, expeditionTimeReduction: 0.4, expeditionSuccessBonus: 0.2 }
         ]
     },
 
@@ -329,20 +314,6 @@ module.exports = {
     },
 
     // Quality of Life Upgrades
-    recipe_scanner: {
-        name: 'Recipe Scanner',
-        description: 'Increases chance of discovering new recipes',
-        type: 'research',
-        maxLevel: 4,
-        costs: [3500, 10000, 25000, 60000],
-        effects: [
-            { level: 1, recipeDiscoveryChance: 0.05 },
-            { level: 2, recipeDiscoveryChance: 0.1 },
-            { level: 3, recipeDiscoveryChance: 0.15 },
-            { level: 4, recipeDiscoveryChance: 0.2 }
-        ]
-    },
-
     quick_access_panel: {
         name: 'Quick Access Panel',
         description: 'Reduces cooldowns on common actions',
@@ -369,17 +340,6 @@ module.exports = {
             { level: 3, arcaneDustGeneration: { amount: 4, interval: 120 } },
             { level: 4, arcaneDustGeneration: { amount: 6, interval: 90 } },
             { level: 5, arcaneDustGeneration: { amount: 10, interval: 60 } }
-        ]
-    },
-
-    master_alchemist_table: {
-        name: 'Master Alchemist Table',
-        description: 'Unlocks advanced brewing techniques and special recipes',
-        type: 'brewing',
-        maxLevel: 1,
-        costs: [50000],
-        effects: [
-            { level: 1, advancedRecipesUnlocked: true, specialBrewingEnabled: true }
         ]
     },
 };

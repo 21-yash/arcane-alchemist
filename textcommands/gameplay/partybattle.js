@@ -26,7 +26,7 @@ const {
     SkillManager,
     TurnOrderManager,
     COMBAT_CONFIG
-} = require("../../utils/combat2");
+} = require("../../utils/combat");
 const { StatusEffectManager } = require("../../utils/statusEffects");
 
 // Global party battle sessions
@@ -42,10 +42,10 @@ const PARTY_BATTLE_CONFIG = {
 };
 
 module.exports = {
-    name: "partybattle2",
+    name: "partybattle",
     description: "Challenge another player to a 3v3 Pal battle with true PvP mechanics!",
     usage: "<@user> | add <pet_id> [pet_id2] [pet_id3] | remove <pet_id> | clear",
-    aliases: ["pb2", "3v3", "partyfight2"],
+    aliases: ["pb", "3v3", "partyfight"],
     
     async execute(message, args, client, prefix) {
         try {

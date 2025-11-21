@@ -69,7 +69,7 @@ module.exports = {
     },
 
     async performResearch(message, player, lab, effects, focus) {
-        const allowAdvanced = !!effects.advancedRecipesUnlocked;
+        const allowAdvanced = false;
         const baseCost = allowAdvanced ? 10 : 6;
 
         if ((lab.researchPoints || 0) < baseCost) {
@@ -88,22 +88,13 @@ module.exports = {
         lab.researchPoints -= baseCost;
         this.applyRecipeUnlock(player, recipe);
 
-        let extraDiscovery = null;
-        if (effects.recipeDiscoveryChance && Math.random() < effects.recipeDiscoveryChance) {
-            const secondRecipe = this.selectResearchRecipe(player, allowAdvanced, focus);
-            if (secondRecipe) {
-                this.applyRecipeUnlock(player, secondRecipe);
-                extraDiscovery = secondRecipe;
-            }
-        }
+
 
         await player.save();
         await lab.save();
 
         let description = `Unlocked the recipe for **${recipe.displayName}**!`;
-        if (extraDiscovery) {
-            description += `\nBonus insight! You also discovered **${extraDiscovery.displayName}**.`;
-        }
+
 
         return message.reply({
             embeds: [createSuccessEmbed('Research Complete', description)]

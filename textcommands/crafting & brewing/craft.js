@@ -114,7 +114,7 @@ class CraftInputValidator {
 
         // Validate item type
         const materialTypes = ["crafting_material", "ingredient"];
-        const itemData = GameData.getItem(itemResult.itemId);
+        const itemData = CommandHelpers.getItemData(itemResult.itemId);
         if (!itemData || !materialTypes.includes(itemData.type)) {
             return {
                 success: false,
@@ -158,7 +158,7 @@ class CraftInputValidator {
 
         // Try to find by normalized name
         const itemId = Object.keys(GameData.items).find(id => {
-            const item = GameData.getItem(id);
+            const item = CommandHelpers.getItemData(id);
             if (!item) return false;
             
             const normalizedItemName = item.name.toLowerCase().replace(/\s+/g, '_');
@@ -174,7 +174,7 @@ class CraftInputValidator {
 
         // Try partial matching for user-friendly search
         const partialMatch = Object.keys(GameData.items).find(id => {
-            const item = GameData.getItem(id);
+            const item = CommandHelpers.getItemData(id);
             if (!item) return false;
             
             const normalizedItemName = item.name.toLowerCase().replace(/\s+/g, '_');
@@ -222,7 +222,7 @@ class CraftingRecipeHandler {
 
         for (const [recipeId, recipeData] of Object.entries(GameData.recipes)) {
             // Only check crafting recipes (items with source = "crafting")
-            const resultItem = GameData.getItem(recipeData.result.itemId);
+            const resultItem = CommandHelpers.getItemData(recipeData.result.itemId);
             if (!resultItem || resultItem.source !== "crafting") {
                 continue;
             }
@@ -291,7 +291,7 @@ class CraftingRecipeHandler {
         const craftingRecipes = [];
         
         for (const [recipeId, recipeData] of Object.entries(GameData.recipes)) {
-            const resultItem = GameData.getItem(recipeData.result.itemId);
+            const resultItem = CommandHelpers.getItemData(recipeData.result.itemId);
             if (resultItem && resultItem.source === "crafting") {
                 craftingRecipes.push({
                     id: recipeId,
@@ -317,7 +317,7 @@ class CraftingRecipeHandler {
                 const recipe = GameData.recipes[recipeId];
                 if (!recipe) return null;
                 
-                const resultItem = GameData.getItem(recipe.result.itemId);
+                const resultItem = CommandHelpers.getItemData(recipe.result.itemId);
                 if (!resultItem || resultItem.source !== "crafting") return null;
                 
                 return {
@@ -330,29 +330,6 @@ class CraftingRecipeHandler {
     }
 }
 
-/**
- * Get player crafting materials filtered by type
- * @param {Object} player - Player object
- * @returns {Array} Available materials for UI
- */
-function getPlayerCraftingMaterials(player) {
-    const materialTypes = ["crafting_material", "ingredient"];
-    
-    return player.inventory
-        .filter(item => {
-            const itemData = GameData.getItem(item.itemId);
-            return itemData && materialTypes.includes(itemData.type);
-        })
-        .map(item => {
-            const itemData = GameData.getItem(item.itemId);
-            return {
-                label: `${itemData.name} (x${item.quantity})`,
-                value: item.itemId,
-                description: itemData.description.substring(0, 100)
-            };
-        });
-}
-
 module.exports = {
     name: "craft",
     description: "Craft equipment and items at the workshop.",
@@ -360,15 +337,9 @@ module.exports = {
     async execute(message, args, client, prefix) {
         try {
             // Check if user already has an active crafting session
-            if (activeCraftingSessions.has(message.author.id)) {
-                return message.reply({
-                    embeds: [
-                        createErrorEmbed(
-                            "Already Crafting",
-                            "You already have an active crafting session! Please finish or cancel it first."
-                        )
-                    ]
-                });
+            const sessionCheck = CommandHelpers.checkActiveSession(activeCraftingSessions, message.author.id, 'Crafting');
+            if (sessionCheck.isActive) {
+                return message.reply({ embeds: [sessionCheck.embed] });
             }
 
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
@@ -379,7 +350,7 @@ module.exports = {
             const labContext = await LabManager.loadPlayerLab(player);
             const labEffects = labContext.effects;
 
-            const materials = getPlayerCraftingMaterials(player);
+            const materials = CommandHelpers.getPlayerMaterials(player);
             if (materials.length === 0) {
                 return message.reply({
                     embeds: [
@@ -418,7 +389,7 @@ module.exports = {
                 if (Object.keys(selectedMaterials).length > 0) {
                     description += `\n**Selected Materials:**\n`;
                     Object.entries(selectedMaterials).forEach(([itemId, qty]) => {
-                        const itemData = GameData.getItem(itemId);
+                        const itemData = CommandHelpers.getItemData(itemId);
                         const itemEmoji = CommandHelpers.getItemEmoji(itemId);
                         description += `> ${itemEmoji} ${itemData.name} x${qty}\n`;
                     });
@@ -426,10 +397,10 @@ module.exports = {
                     // Show recipe match status
                     const matchResult = CraftingRecipeHandler.findMatchingRecipe(selectedMaterials, player);
                     if (matchResult.hasMatch) {
-                        const resultItem = matchResult.recipe.resultItem || GameData.getItem(matchResult.recipe.result.itemId);
+                        const resultItem = matchResult.recipe.resultItem || CommandHelpers.getItemData(matchResult.recipe.result.itemId);
                         description += `\n✅ **Recipe Match Found!**\n> Will create: ${resultItem.name} x${matchResult.recipe.result.quantity}`;
                     } else {
-                        description += `\n❌ **No Recipe Match** - Materials will be partially consumed for salvage`;
+                        description += `\n❌ **No Recipe Match**`;
                     }
                 }
 
@@ -459,11 +430,6 @@ module.exports = {
                         .setLabel("Clear All")
                         .setStyle(ButtonStyle.Secondary)
                         .setDisabled(!hasMaterials),
-                    new ButtonBuilder()
-                        .setCustomId("craft_recipes")
-                        .setLabel("Show Recipes")
-                        .setStyle(ButtonStyle.Primary)
-                        .setEmoji("📋"),
                     new ButtonBuilder()
                         .setCustomId("craft_cancel")
                         .setLabel("Cancel")
@@ -533,13 +499,6 @@ module.exports = {
                     embeds: [createWorkshopEmbed()],
                     components: createComponents()
                 });
-
-                // Attempt to delete user's input message (ignore errors)
-                try {
-                    await m.delete();
-                } catch (e) {
-                    // Ignore deletion errors (insufficient permissions, etc.)
-                }
             });
 
             componentCollector.on("collect", async (i) => {
@@ -568,35 +527,6 @@ module.exports = {
                         });
                         messageCollector.stop();
                         componentCollector.stop();
-                        break;
-
-                    case "craft_recipes":
-                        // Show available crafting recipes
-                        const availableRecipes = CraftingRecipeHandler.getAvailableCraftingRecipes(player);
-                        const knownRecipes = CraftingRecipeHandler.getKnownCraftingRecipes(player);
-                        
-                        let recipesText = "";
-                        
-                        if (knownRecipes.length > 0) {
-                            recipesText += "**Your Known Recipes:**\n";
-                            knownRecipes.forEach(recipe => {
-                                recipesText += `\n**${recipe.resultItem.name}** (${recipe.result.quantity}x)\n`;
-                                recipesText += `Materials: ${recipe.ingredients.map(ing => {
-                                    const item = GameData.getItem(ing.itemId);
-                                    const itemEmoji = CommandHelpers.getItemEmoji(ing.itemId);
-                                    return `${itemEmoji} ${item.name} x${ing.quantity}`;
-                                }).join(', ')}\n`;
-                            });
-                        }
-
-                        if (recipesText.length > 4000) {
-                            recipesText = recipesText.substring(0, 3900) + "\n...(truncated)";
-                        }
-
-                        await i.reply({
-                            embeds: [createInfoEmbed("Crafting Recipes", recipesText)],
-                            ephemeral: true
-                        });
                         break;
 
                     case "craft_confirm":
@@ -670,20 +600,8 @@ module.exports = {
             });
 
         } catch (error) {
-            console.error("Craft command error:", error);
             activeCraftingSessions.delete(message.author.id);
-            
-            const errorEmbed = createErrorEmbed(
-                "An Error Occurred",
-                "There was a problem with your crafting session. Please try again."
-            );
-
-            // Try to reply or edit based on context
-            if (message.replied || message.deferred) {
-                message.followUp({ embeds: [errorEmbed] }).catch(() => {});
-            } else {
-                message.reply({ embeds: [errorEmbed] }).catch(() => {});
-            }
+            await CommandHelpers.handleCommandError(error, 'Craft', message);
         }
     },
 
@@ -694,6 +612,7 @@ module.exports = {
      * @param {Object} matchResult - Recipe match result
      * @param {Object} client - Discord client
      * @param {Object} message - Discord message
+     * @param {Object} labEffects - Lab effects
      * @returns {Object} Crafting result
      */
     async executeCrafting(player, materials, matchResult, client, message, labEffects = null) {
@@ -708,9 +627,11 @@ module.exports = {
 
                 // Grant XP
                 await grantPlayerXp(client, message, player.userId, recipe.xp, { labEffects });
-                let newlyDiscoveredRecipe = null;
 
                 // Add recipe to crafting journal if not already there
+                if (!player.craftingJournal) {
+                    player.craftingJournal = [];
+                }
                 if (!player.craftingJournal.includes(recipeId)) {
                     player.craftingJournal.push(recipeId);
                 }
@@ -723,24 +644,14 @@ module.exports = {
                     }
                 });
 
-                // Add result items
-                const resultItem = player.inventory.find(item => item.itemId === recipe.result.itemId);
-                
-                if (resultItem) {
-                    resultItem.quantity += recipe.result.quantity;
-                } else {
-                    player.inventory.push({
-                        itemId: recipe.result.itemId,
-                        quantity: recipe.result.quantity
-                    });
-                }
+                // Add result items using CommandHelpers
+                CommandHelpers.addItemsToInventory(player, [{
+                    itemId: recipe.result.itemId,
+                    quantity: recipe.result.quantity
+                }]);
 
                 // Clean up empty inventory slots
                 player.inventory = player.inventory.filter(item => item.quantity > 0);
-
-                if (labEffects?.recipeDiscoveryChance && Math.random() < labEffects.recipeDiscoveryChance) {
-                    newlyDiscoveredRecipe = discoverNewCraftingRecipe(player, labEffects?.advancedRecipesUnlocked);
-                }
 
                 await player.save();
 
@@ -748,11 +659,8 @@ module.exports = {
                 client.emit("itemCrafted", message.author.id, recipe.result.itemId);
                 await updateQuestProgress(message.author.id, 'craft_items', 1);
 
-                const resultItemData = GameData.getItem(recipe.result.itemId);
-                let successMsg = `You successfully crafted **${recipe.result.quantity}x ${resultItemData.name}**!`;
-                if (newlyDiscoveredRecipe) {
-                    successMsg += `\n\n📘 You discovered a new blueprint: **${newlyDiscoveredRecipe}**!`;
-                }
+                const resultItemData = CommandHelpers.getItemData(recipe.result.itemId);
+                const successMsg = `You successfully crafted **${recipe.result.quantity}x ${resultItemData.name}**!`;
 
                 return {
                     embed: createSuccessEmbed("Crafting Success!", successMsg)
@@ -795,33 +703,3 @@ module.exports = {
         }
     }
 };
-
-function discoverNewCraftingRecipe(player, allowAdvanced = false) {
-    const allRecipes = GameData.recipes || {};
-    const unknown = Object.entries(allRecipes).filter(([recipeId, recipeData]) => {
-        if (!recipeData?.result?.itemId) return false;
-        const item = GameData.getItem(recipeData.result.itemId);
-        if (!item || item.source !== 'crafting') return false;
-        if (!allowAdvanced && isAdvancedRecipe(recipeData)) {
-            return false;
-        }
-        return !player.craftingJournal.includes(recipeId);
-    });
-
-    if (!unknown.length) {
-        return null;
-    }
-
-    const [recipeId, recipeData] = unknown[Math.floor(Math.random() * unknown.length)];
-    player.craftingJournal.push(recipeId);
-    player.markModified?.('craftingJournal');
-    const itemData = GameData.getItem(recipeData.result.itemId);
-    return itemData?.name || recipeId;
-}
-
-function isAdvancedRecipe(recipeData) {
-    const item = GameData.getItem(recipeData.result.itemId);
-    if (!item) return false;
-    const rareTier = item.rarity && ['Epic', 'Legendary'].includes(item.rarity);
-    return rareTier || recipeData.level >= 10;
-}
