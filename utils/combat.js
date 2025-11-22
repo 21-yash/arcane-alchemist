@@ -1363,7 +1363,6 @@ class CombatEngine {
                 const counterSkill = SkillManager.checkActivation(defender, "counter");
                 if (counterSkill?.type === "counter") {
                     logger.add(counterSkill.message);
-                    logger.add(`⚔️ Counter-attack deals **${counterSkill.damage}** damage!`);
                     // Note: Counter damage should be applied by caller
                 }
                 return { damage: 0, lifesteal: 0, applyFear: false, counterDamage: counterSkill?.damage || 0 };

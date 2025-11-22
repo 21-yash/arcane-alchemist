@@ -312,8 +312,8 @@ module.exports = {
                 maxLevel: 3,
                 effects: [
                     { level: 1, bonus: { dodgeChance: 0.10 } },
-                    { level: 2, bonus: { dodgeChance: 0.15 } },
-                    { level: 3, bonus: { dodgeChance: 0.20, counterChance: 0.15 } } 
+                    { level: 2, bonus: { dodgeChance: 0.15, counterChance: 0.20 } },
+                    { level: 3, bonus: { dodgeChance: 0.20, counterChance: 0.30 } } 
                 ],
                 prerequisites: []
             },

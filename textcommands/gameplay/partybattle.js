@@ -80,10 +80,10 @@ module.exports = {
                                 createErrorEmbed(
                                     "Invalid Usage",
                                     `Please use:\n` +
-                                    `• \`${prefix}partybattle2 @user\` - Challenge a player\n` +
-                                    `• \`${prefix}partybattle2 add <pet_id> [pet_id2] [pet_id3]\` - Add pets\n` +
-                                    `• \`${prefix}partybattle2 remove <pet_id>\` - Remove a pet\n` +
-                                    `• \`${prefix}partybattle2 clear\` - Clear your party`,
+                                    `• \`${prefix}partybattle @user\` - Challenge a player\n` +
+                                    `• \`${prefix}partybattle add <pet_id> [pet_id2] [pet_id3]\` - Add pets\n` +
+                                    `• \`${prefix}partybattle remove <pet_id>\` - Remove a pet\n` +
+                                    `• \`${prefix}partybattle clear\` - Clear your party`,
                                 ),
                             ],
                         });
@@ -117,7 +117,7 @@ module.exports = {
                     embeds: [
                         createErrorEmbed(
                             "Invalid Usage",
-                            `Please use: \`${prefix}partybattle2 add <pet_id> [pet_id2] [pet_id3]\``,
+                            `Please use: \`${prefix}partybattle add <pet_id> [pet_id2] [pet_id3]\``,
                         ),
                     ],
                 });
@@ -142,7 +142,7 @@ module.exports = {
                     embeds: [
                         createErrorEmbed(
                             "No Active Battle",
-                            "You are not in an active party battle. Use `partybattle2 @user` to challenge someone first.",
+                            "You are not in an active party battle. Use `partybattle @user` to challenge someone first.",
                         ),
                     ],
                 });
@@ -268,7 +268,7 @@ module.exports = {
                     embeds: [
                         createErrorEmbed(
                             "Invalid Usage",
-                            `Please use: \`${prefix}partybattle2 remove <pet_id>\``,
+                            `Please use: \`${prefix}partybattle remove <pet_id>\``,
                         ),
                     ],
                 });
@@ -449,8 +449,8 @@ module.exports = {
             `**${message.author.displayName}** has challenged **${targetUser.displayName}** to a ${PARTY_BATTLE_CONFIG.MAX_PETS}v${PARTY_BATTLE_CONFIG.MAX_PETS} party battle!\n\n` +
                 `${targetUser.displayName}, do you accept this challenge?\n\n` +
                 `*After accepting, both players add ${PARTY_BATTLE_CONFIG.MAX_PETS} pets using:*\n` +
-                `• \`${prefix}partybattle2 add <pet_id>\`\n` +
-                `• \`${prefix}partybattle2 add <id1> <id2> <id3>\``,
+                `• \`${prefix}partybattle add <pet_id>\`\n` +
+                `• \`${prefix}partybattle add <id1> <id2> <id3>\``,
             "#FF6B6B",
             {
                 footer: { text: `Challenge expires in ${PARTY_BATTLE_CONFIG.CHALLENGE_TIMEOUT / 1000} seconds` },
@@ -506,8 +506,8 @@ module.exports = {
                         "Challenge Accepted!",
                         `${targetUser.displayName} has accepted the challenge!\n\n` +
                             `**Both players add ${PARTY_BATTLE_CONFIG.MAX_PETS} pets:**\n` +
-                            `• \`${prefix}partybattle2 add <pet_id>\`\n` +
-                            `• \`${prefix}partybattle2 add <id1> <id2> <id3>\`\n\n` +
+                            `• \`${prefix}partybattle add <pet_id>\`\n` +
+                            `• \`${prefix}partybattle add <id1> <id2> <id3>\`\n\n` +
                             `*You have ${PARTY_BATTLE_CONFIG.PREPARATION_TIME / 60000} minutes to select your party.*`,
                     );
                     await interaction.update({ embeds: [acceptEmbed], components: [] });
@@ -874,6 +874,9 @@ module.exports = {
                     opponentPal.nickname
                 );
 
+                challengerPal.stats.hp = result.challengerRemainingHp;
+                opponentPal.stats.hp = result.opponentRemainingHp;
+
                 battleLog.push(result.log);
                 battleLog.push("");
 
@@ -1077,7 +1080,6 @@ module.exports = {
             while (challengerHp > 0 && opponentHp > 0 && turn < COMBAT_CONFIG.MAX_TURNS) {
                 turn++;
                 combatEngine.logger.add(`\n**--- Turn ${turn} ---**`);
-                combatEngine.logger.add("");
                 
                 const challengerStatusResult = StatusEffectManager.processStatusEffects(
                     { ...challengerPal, currentHp: challengerHp, maxHp: challengerPal.stats.hp, name: challengerNickname },
@@ -1098,17 +1100,6 @@ module.exports = {
                 // CRITICAL FIX: Apply modified stats back to the creature for damage calculation
                 opponentPal.stats = opponentStatusResult.creature.stats;
                 combatEngine.logger.addMultiple(opponentStatusResult.battleLog);
-                
-                challengerHp = applyParadoxRecoil(
-                    challengerParadox,
-                    challengerHp,
-                    `${challengerUser.displayName}'s ${challengerNickname}`
-                );
-                opponentHp = applyParadoxRecoil(
-                    opponentParadox,
-                    opponentHp,
-                    `${opponentUser.displayName}'s ${opponentNickname}`
-                );
                 
                 if (challengerHp <= 0 || opponentHp <= 0) break;
                 
@@ -1212,8 +1203,8 @@ module.exports = {
                         secondAttacker.hp = Math.min(secondAttacker.pal.stats.hp, secondAttacker.hp + (counterResult.lifesteal || 0));
                         
                         if (counterResult.counterDamage > 0) {
-                            firstAttacker.hp = Math.max(0, firstAttacker.hp - counterResult.counterDamage);
-                            combatEngine.logger.add(`💥 **Reflected damage:** ${firstAttacker.name} takes **${counterResult.counterDamage}** damage!`);
+                            secondAttacker.hp = Math.max(0, secondAttacker.hp - counterResult.counterDamage);
+                            combatEngine.logger.add(`💥 **Counter damage:** ${secondAttacker.name} takes **${counterResult.counterDamage}** damage!`);
                         }
 
                         if (counterResult.reflectedDamage > 0) {
@@ -1260,10 +1251,22 @@ module.exports = {
                 
                 challengerHp = combatEngine.applyHealingEffects(challengerPal, challengerHp, challengerNickname);
                 opponentHp = combatEngine.applyHealingEffects(opponentPal, opponentHp, opponentNickname);
+           
+                challengerHp = applyParadoxRecoil(
+                    challengerParadox,
+                    challengerHp,
+                    `${challengerUser.displayName}'s ${challengerNickname}`
+                );
+                opponentHp = applyParadoxRecoil(
+                    opponentParadox,
+                    opponentHp,
+                    `${opponentUser.displayName}'s ${opponentNickname}`
+                );               
                 
-                // Display HP after each turn (just like battle2)
+                // Display HP after each turn 
                 if (challengerHp > 0 && opponentHp > 0) {
                     combatEngine.logger.add(`\n💚 **${challengerNickname}:** ${challengerHp}/${challengerPal.stats.hp} HP | **${opponentNickname}:** ${opponentHp}/${opponentPal.stats.hp} HP`);
+                    combatEngine.logger.add("\u200B");
                 }
             }
             
@@ -1284,7 +1287,9 @@ module.exports = {
             return {
                 winnerId,
                 log: combatEngine.logger.getLog(),
-                areaAttackData
+                areaAttackData,
+                challengerRemainingHp: Math.max(0, challengerHp),
+                opponentRemainingHp: Math.max(0, opponentHp)
             };
         } catch (error) {
             console.error('Error in single PvP battle:', error);

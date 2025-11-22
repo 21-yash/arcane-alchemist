@@ -961,8 +961,8 @@ module.exports = {
                         secondAttacker.hp = Math.min(secondAttacker.pal.stats.hp, secondAttacker.hp + (counterResult.lifesteal || 0));
                         
                         if (counterResult.counterDamage > 0) {
-                            firstAttacker.hp = Math.max(0, firstAttacker.hp - counterResult.counterDamage);
-                            combatEngine.logger.add(`💥 **Reflected damage:** ${firstAttacker.name} takes **${counterResult.counterDamage}** damage!`);
+                            secondAttacker.hp = Math.max(0, secondAttacker.hp - counterResult.counterDamage);
+                            combatEngine.logger.add(`💥 **Counter damage:** ${secondAttacker.name} takes **${counterResult.counterDamage}** damage!`);
                         }
 
                         if (counterResult.reflectedDamage > 0) {
