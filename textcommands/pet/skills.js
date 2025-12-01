@@ -405,6 +405,33 @@ module.exports = {
                 case 'chance':
                     effects.push(`${Math.round(value * 100)}% Activation Chance`);
                     break;
+                case 'frenzyDamage':
+                    effects.push(`${Math.round(value * 100)}% Bonus Damage from Missing HP`);
+                    break;
+                case 'resonanceStacks':
+                    effects.push(`${value} Max Resonance Stacks`);
+                    break;
+                case 'resonancePerStack':
+                    effects.push(`${Math.round(value * 100)}% Damage per Stack`);
+                    break;
+                case 'maxResonanceBurst':
+                    effects.push(`${value}x Resonance Burst`);
+                    break;
+                case 'barrierChance':
+                    effects.push(`${Math.round(value * 100)}% Barrier Chance`);
+                    break;
+                case 'barrierAbsorb':
+                    effects.push(`${Math.round(value * 100)}% Barrier Absorb`);
+                    break;
+                case 'aoeProtect':
+                    if (value) effects.push('AoE Protection (Party)');
+                    break;
+                case 'divineRetribution':
+                    effects.push(`${Math.round(value * 100)}% Divine Retribution`);
+                    break;
+                case 'lichChance':
+                    effects.push(`${Math.round(value * 100)}% Lich Transform Chance`);
+                    break;
                 default:
                     effects.push(`${key}: ${value}`);
             }

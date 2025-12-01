@@ -208,8 +208,8 @@ module.exports = {
         rarity: 'Legendary',
         type: 'Mystic',
         description: 'A colossal tree guardian that has witnessed the rise and fall of civilizations.',
-        baseStats: { hp: 350, atk: 50, def: 150, spd: 10, luck: 15 }, // Total: 525
-        statGrowth: { hp: 35, atk: 5, def: 15, spd: 1, luck: 1 }, // Total: 52
+        baseStats: { hp: 350, atk: 70, def: 130, spd: 10, luck: 15 }, // Total: 525
+        statGrowth: { hp: 35, atk: 7, def: 13, spd: 1, luck: 1 }, // Total: 52
         evolution: null,
         playstyle: 'Immovable Ancient',
         pic: 'https://cdn.discordapp.com/attachments/920231858204200961/1412752883992231976/image-removebg-preview_23.png?ex=68b97027&is=68b81ea7&hm=93716d03848e69c802aef17ef189085392eaf1f3679ba306d96c853f11a4c361&'
@@ -219,8 +219,8 @@ module.exports = {
         rarity: 'Legendary',
         type: 'Mystic',
         description: 'A divine unicorn that brings fortune and prosperity to the pure of heart.',
-        baseStats: { hp: 220, atk: 80, def: 100, spd: 110, luck: 65 }, // Total: 525
-        statGrowth: { hp: 22, atk: 8, def: 10, spd: 8, luck: 4 }, // Total: 52
+        baseStats: { hp: 190, atk: 110, def: 100, spd: 110, luck: 65 }, // Total: 525
+        statGrowth: { hp: 19, atk: 11, def: 10, spd: 8, luck: 4 }, // Total: 52
         evolution: null,
         playstyle: 'Divine Blessing',
         pic: 'https://cdn.discordapp.com/attachments/920231858204200961/1412757035425988728/image-removebg-preview_10.png?ex=68b97405&is=68b82285&hm=aec90404d85267aefbe55897b419aa76a430430bd5d7a90a40d69eeb265e897a&'

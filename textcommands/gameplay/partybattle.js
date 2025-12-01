@@ -25,7 +25,8 @@ const {
     TypeAdvantage,
     SkillManager,
     TurnOrderManager,
-    COMBAT_CONFIG
+    COMBAT_CONFIG,
+    Utils
 } = require("../../utils/combat");
 const { StatusEffectManager } = require("../../utils/statusEffects");
 
@@ -38,7 +39,7 @@ const PARTY_BATTLE_CONFIG = {
     PREPARATION_TIME: 5 * 60 * 1000,
     CHALLENGE_TIMEOUT: 60000,
     XP_REWARD: 75,
-    AREA_DAMAGE_MULTIPLIER: 0.3,
+    AREA_DAMAGE_MULTIPLIER: 0.1,
 };
 
 module.exports = {
@@ -177,10 +178,11 @@ module.exports = {
             const result = await this.processPetAdditions(challengerId, petIds, playerData);
             await this.sendPetAdditionResponse(message, result);
 
+            // Check if both parties are full
             if (battleSession.challenger.pals.length === PARTY_BATTLE_CONFIG.MAX_PETS && 
                 battleSession.opponent.pals.length === PARTY_BATTLE_CONFIG.MAX_PETS) {
-                battleSession.status = "potion_selection";
-                await this.sendPartyPotionSelectionMessage(message, battleSession, client);
+                battleSession.status = "ready_check";
+                await this.sendReadyConfirmation(message, battleSession, client);
             }
         } catch (error) {
             console.error("Error handling party pet addition:", error);
@@ -242,7 +244,6 @@ module.exports = {
             responseMessage += `❌ Errors: ${errors.join(", ")}\n`;
         }
 
-        // FIX: Get actual party size from battle session
         const battleSession = this.findPlayerBattleSession(message.author.id);
         const playerData = battleSession.challenger.id === message.author.id 
             ? battleSession.challenger 
@@ -545,13 +546,11 @@ module.exports = {
             challenger: {
                 id: challengerId,
                 pals: [],
-                potion: null,
                 ready: false,
             },
             opponent: {
                 id: opponentId,
                 pals: [],
-                potion: null,
                 ready: false,
             },
             status: "pet_selection",
@@ -569,7 +568,7 @@ module.exports = {
         return null;
     },
 
-    async sendPartyPotionSelectionMessage(message, battleSession, client) {
+    async sendReadyConfirmation(message, battleSession, client) {
         try {
             const challengerUser = await client.users.fetch(battleSession.challenger.id);
             const opponentUser = await client.users.fetch(battleSession.opponent.id);
@@ -581,144 +580,58 @@ module.exports = {
                 .map((p, i) => `${i+1}. **${p.nickname}** (Lv.${p.level})`)
                 .join('\n');
 
-            const selectionEmbed = createCustomEmbed(
-                "🧪 3v3 Party Battle - Potion Selection Phase",
-                `Both players have selected their party!\n\n` +
+            const readyEmbed = createCustomEmbed(
+                "⚔️ Party Battle Ready!",
+                `Both parties are assembled!\n\n` +
                     `**${challengerUser.displayName}'s Party:**\n${challengerParty}\n\n` +
                     `**${opponentUser.displayName}'s Party:**\n${opponentParty}\n\n` +
-                    `Now select your battle potions (optional) and click Ready!`,
-                "#4ECDC4",
+                    `Click **Start Battle** when you are ready to begin!`,
+                "#4ECDC4"
             );
 
-            await message.channel.send({ embeds: [selectionEmbed] });
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`ready_for_party_battle_${battleSession.challenger.id}`)
+                    .setLabel(`${challengerUser.username}: Start`)
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId(`ready_for_party_battle_${battleSession.opponent.id}`)
+                    .setLabel(`${opponentUser.username}: Start`)
+                    .setStyle(ButtonStyle.Success)
+            );
 
-            await this.sendPartyPotionMessage(message, battleSession.challenger.id, battleSession, client, true);
-            await this.sendPartyPotionMessage(message, battleSession.opponent.id, battleSession, client, false);
-        } catch (error) {
-            console.error("Error sending potion selection message:", error);
-        }
-    },
-
-    async sendPartyPotionMessage(message, userId, battleSession, client, isChallenger) {
-        try {
-            const player = await Player.findOne({ userId });
-            if (!player) return;
-
-            // Only get battle potions (usable: false)
-            const potions = player.inventory.filter((item) => {
-                const itemData = GameData.getItem(item.itemId);
-                return itemData?.type === "potion" && itemData.usable === false && item.quantity > 0;
+            const readyMessage = await message.channel.send({
+                content: `<@${battleSession.challenger.id}> <@${battleSession.opponent.id}>`,
+                embeds: [readyEmbed],
+                components: [row],
             });
 
-            const potionOptions = [
-                {
-                    label: "No Potion",
-                    description: "Fight without any potion boost",
-                    value: "none",
-                },
-                ...potions.slice(0, 24).map((potion, index) => {
-                    const itemData = GameData.getItem(potion.itemId);
-                    return {
-                        label: itemData.name,
-                        description: itemData.description.substring(0, 100),
-                        value: `${potion.itemId}_${index}`,
-                    };
-                }),
-            ];
-
-            const playerData = isChallenger ? battleSession.challenger : battleSession.opponent;
-            const preparationEmbed = createCustomEmbed(
-                "⚔️ 3v3 Battle Preparation",
-                `Your party is assembled and ready!\n` +
-                    `Select a battle potion to enhance your lead Pal.\n\n` +
-                    `**Your Party:**\n${playerData.pals.map((p, i) => `${i+1}. **${p.nickname}** (Lv.${p.level})`).join('\n')}\n\n` +
-                    `**Available Battle Potions:** ${potions.length}`,
-                "#4ECDC4",
-            );
-
-            const components = this.createPotionSelectionComponents(potionOptions, userId);
-            const preparationMessage = await message.channel.send({
-                content: `<@${userId}>`,
-                embeds: [preparationEmbed],
-                components: components,
+            const collector = readyMessage.createMessageComponentCollector({
+                time: 60000,
             });
 
-            this.handlePotionSelectionInteractions(preparationMessage, userId, battleSession, isChallenger, message, client);
+            collector.on("collect", async (interaction) => {
+                const userId = interaction.user.id;
+                
+                if (userId !== battleSession.challenger.id && userId !== battleSession.opponent.id) {
+                    return interaction.reply({ content: "You are not part of this battle!", ephemeral: true });
+                }
+
+                await this.handlePlayerReady(interaction, battleSession, userId === battleSession.challenger.id, message, client);
+            });
+
+            collector.on("end", (collected) => {
+                if (partyBattleSessions.has(battleSession.id)) {
+                    readyMessage.edit({ components: [] }).catch(() => {});
+                    message.channel.send("Battle cancelled - players did not ready up in time.");
+                    partyBattleSessions.delete(battleSession.id);
+                }
+            });
+
         } catch (error) {
-            console.error("Error sending potion message:", error);
+            console.error('Error sending ready confirmation:', error);
+            partyBattleSessions.delete(battleSession.id);
         }
-    },
-
-    createPotionSelectionComponents(potionOptions, userId) {
-        const components = [];
-
-        if (potionOptions.length > 1) {
-            const potionSelect = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId(`select_party_battle_potion_${userId}`)
-                    .setPlaceholder("Choose a battle potion (optional)")
-                    .addOptions(potionOptions),
-            );
-            components.push(potionSelect);
-        }
-
-        const readyButton = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`ready_for_party_battle_${userId}`)
-                .setLabel("Ready for Enhanced Battle!")
-                .setStyle(ButtonStyle.Success)
-                .setEmoji("⚔️"),
-        );
-        components.push(readyButton);
-
-        return components;
-    },
-
-    handlePotionSelectionInteractions(preparationMessage, userId, battleSession, isChallenger, originalMessage, client) {
-        const preparationCollector = preparationMessage.createMessageComponentCollector({
-            filter: (i) => i.user.id === userId,
-            time: PARTY_BATTLE_CONFIG.PREPARATION_TIME,
-        });
-
-        preparationCollector.on("collect", async (interaction) => {
-            try {
-                if (interaction.customId === `select_party_battle_potion_${userId}`) {
-                    await this.handlePotionSelection(interaction, battleSession, isChallenger);
-                }
-
-                if (interaction.customId === `ready_for_party_battle_${userId}`) {
-                    await this.handlePlayerReady(interaction, battleSession, isChallenger, originalMessage, client);
-                }
-            } catch (error) {
-                console.error("Error handling potion selection interaction:", error);
-                await interaction.reply({
-                    content: "An error occurred while processing your selection.",
-                    ephemeral: true,
-                });
-            }
-        });
-
-        preparationCollector.on("end", () => {
-            preparationMessage.edit({ components: [] }).catch(() => {});
-        });
-    },
-
-    async handlePotionSelection(interaction, battleSession, isChallenger) {
-        const selectedPotionId = interaction.values[0];
-        const [itemId] = selectedPotionId.split("_");
-        const selectedPotion = selectedPotionId === "none" ? null : GameData.getItem(itemId);
-
-        if (isChallenger) {
-            battleSession.challenger.potion = selectedPotion;
-        } else {
-            battleSession.opponent.potion = selectedPotion;
-        }
-
-        const potionName = selectedPotion ? selectedPotion.name : "No Potion";
-        await interaction.reply({
-            content: `✅ Selected **${potionName}** for party battle!`,
-            ephemeral: true,
-        });
     },
 
     async handlePlayerReady(interaction, battleSession, isChallenger, originalMessage, client) {
@@ -728,24 +641,24 @@ module.exports = {
             battleSession.opponent.ready = true;
         }
 
-        await interaction.update({
-            components: interaction.message.components.map((row) => {
-                const newRow = ActionRowBuilder.from(row);
-                newRow.components.forEach((component) => {
-                    if (component.data.custom_id === `ready_for_party_battle_${interaction.user.id}`) {
-                        component
-                            .setDisabled(true)
-                            .setLabel("Ready!")
-                            .setStyle(ButtonStyle.Secondary);
-                    }
-                });
-                return newRow;
-            }),
+        const components = interaction.message.components.map((row) => {
+            const newRow = ActionRowBuilder.from(row);
+            newRow.components.forEach((component) => {
+                if (component.data.custom_id === interaction.customId) {
+                    component
+                        .setDisabled(true)
+                        .setLabel("Ready!")
+                        .setStyle(ButtonStyle.Secondary);
+                }
+            });
+            return newRow;
         });
 
+        await interaction.update({ components });
+
         if (battleSession.challenger.ready && battleSession.opponent.ready) {
+            partyBattleSessions.delete(battleSession.id); // Remove session to prevent timeout
             await this.startEnhancedPartyBattle(originalMessage, battleSession, client);
-            partyBattleSessions.delete(battleSession.id);
         }
     },
 
@@ -775,13 +688,6 @@ module.exports = {
                 battleLog.push(`${i+1}. **${pal.nickname}** (Lv.${pal.level}) - ${type}`);
             });
             
-            if (challenger.potion) {
-                battleLog.push(`\n💉 **${challengerUser.displayName}** uses **${challenger.potion.name}**!`);
-            }
-            if (opponent.potion) {
-                battleLog.push(`💉 **${opponentUser.displayName}** uses **${opponent.potion.name}**!`);
-            }
-            
             battleLog.push(`\n**First Battle:** ${challenger.pals[0].nickname} vs ${opponent.pals[0].nickname}`);
             battleLog.push("");
 
@@ -791,28 +697,23 @@ module.exports = {
                 const opponentPal = opponent.pals[opponentActiveIndex];
 
                 if (challengerPal.areaDamage > 0) {
-                    maxhp = challengerPal.stats.hp;
+                    const maxhp = challengerPal.stats.hp;
                     challengerPal.stats.hp = Math.max(1, challengerPal.stats.hp - challengerPal.areaDamage);
                     battleLog.push(`💥 **${challengerPal.nickname}** enters with ${challengerPal.areaDamage} accumulated area damage!`);
                     battleLog.push(`❤️ *${challengerPal.nickname} HP: ${challengerPal.stats.hp}/${maxhp}*`);
-                    challengerPal.areaDamage = 0; // Reset after applying
+                    challengerPal.areaDamage = 0;
                 }
                 
                 if (opponentPal.areaDamage > 0) {
-                    maxhp = opponentPal.stats.hp;
+                    const maxhp = opponentPal.stats.hp;
                     opponentPal.stats.hp = Math.max(1, opponentPal.stats.hp - opponentPal.areaDamage);
                     battleLog.push(`💥 **${opponentPal.nickname}** enters with ${opponentPal.areaDamage} accumulated area damage!`);
                     battleLog.push(`❤️ *${opponentPal.nickname} HP: ${opponentPal.stats.hp}/${maxhp}*`);
-                    opponentPal.areaDamage = 0; // Reset after applying
+                    opponentPal.areaDamage = 0;
                 }
 
-                // Apply potion effects only to lead pets
-                const enhancedChallengerPal = challengerActiveIndex === 0 
-                    ? this.applyPotionEffects(challengerPal, challenger.potion)
-                    : StatManager.cloneCreature(challengerPal);
-                const enhancedOpponentPal = opponentActiveIndex === 0
-                    ? this.applyPotionEffects(opponentPal, opponent.potion)
-                    : StatManager.cloneCreature(opponentPal);
+                const enhancedChallengerPal = StatManager.cloneCreature(challengerPal);
+                const enhancedOpponentPal = StatManager.cloneCreature(opponentPal);
 
                 // Get pal types
                 const challengerPalData = GameData.getPet(challengerPal.basePetId);
@@ -853,12 +754,11 @@ module.exports = {
                     { beastCount: opponentBeastCount }
                 );
 
-                // Get potion effects for combat
-                const challengerPotionEffects = challengerActiveIndex === 0 ? this.getPotionEffects(challenger.potion) : {};
-                const opponentPotionEffects = opponentActiveIndex === 0 ? this.getPotionEffects(opponent.potion) : {};
+                // Get potion effects via Utils helper
+                const challengerPotionEffects = Utils.extractPotionAbilities(finalChallengerPal);
+                const opponentPotionEffects = Utils.extractPotionAbilities(finalOpponentPal);
 
-                // Simulate single battle with true PvP
-                // Replace the entire section that handles battle results
+                // Simulate single battle
                 const result = await this.simulateSinglePvPBattle(
                     finalChallengerPal,
                     finalOpponentPal,
@@ -915,7 +815,6 @@ module.exports = {
                 }
             }
 
-            // FIXED: Correct winner determination
             const challengerWon = challengerActiveIndex < PARTY_BATTLE_CONFIG.MAX_PETS;
             const overallWinner = challengerWon ? challengerUser : opponentUser;
             const remainingPets = challengerWon ? 
@@ -952,7 +851,7 @@ module.exports = {
             combatEngine.logger.clear();
             combatEngine.logger.add(`\n⚔️ **${challengerNickname}** vs **${opponentNickname}**`);
             
-            // Apply Crushing Pressure (Abyssal skill) - reduces opponent's ATK and SPD
+            // Apply Crushing Pressure (Abyssal skill)
             if (challengerPal.skillBonuses?.enemyAtkDown || challengerPal.skillBonuses?.enemySpdDown) {
                 const atkReduction = challengerPal.skillBonuses.enemyAtkDown || 0;
                 const spdReduction = challengerPal.skillBonuses.enemySpdDown || 0;
@@ -964,16 +863,11 @@ module.exports = {
                     const atkLost = originalAtk - opponentPal.stats.atk;
                     const spdLost = originalSpd - opponentPal.stats.spd;
                     combatEngine.logger.add(`🌊 **Crushing Pressure!** The abyss squeezes ${opponentNickname}!`);
-                    if (atkLost > 0) {
-                        combatEngine.logger.add(`${opponentNickname}'s ATK reduced by ${atkLost} (${originalAtk} → ${opponentPal.stats.atk})`);
-                    }
-                    if (spdLost > 0) {
-                        combatEngine.logger.add(`${opponentNickname}'s SPD reduced by ${spdLost} (${originalSpd} → ${opponentPal.stats.spd})`);
-                    }
+                    if (atkLost > 0) combatEngine.logger.add(`${opponentNickname}'s ATK reduced by ${atkLost}`);
+                    if (spdLost > 0) combatEngine.logger.add(`${opponentNickname}'s SPD reduced by ${spdLost}`);
                 }
             }
             
-            // Apply Crushing Pressure from opponent to challenger
             if (opponentPal.skillBonuses?.enemyAtkDown || opponentPal.skillBonuses?.enemySpdDown) {
                 const atkReduction = opponentPal.skillBonuses.enemyAtkDown || 0;
                 const spdReduction = opponentPal.skillBonuses.enemySpdDown || 0;
@@ -985,16 +879,12 @@ module.exports = {
                     const atkLost = originalAtk - challengerPal.stats.atk;
                     const spdLost = originalSpd - challengerPal.stats.spd;
                     combatEngine.logger.add(`🌊 **Crushing Pressure!** The abyss squeezes ${challengerNickname}!`);
-                    if (atkLost > 0) {
-                        combatEngine.logger.add(`${challengerNickname}'s ATK reduced by ${atkLost} (${originalAtk} → ${challengerPal.stats.atk})`);
-                    }
-                    if (spdLost > 0) {
-                        combatEngine.logger.add(`${challengerNickname}'s SPD reduced by ${spdLost} (${originalSpd} → ${challengerPal.stats.spd})`);
-                    }
+                    if (atkLost > 0) combatEngine.logger.add(`${challengerNickname}'s ATK reduced by ${atkLost} (${originalAtk} → ${challengerPal.stats.atk})`);
+                    if (spdLost > 0) combatEngine.logger.add(`${challengerNickname}'s SPD reduced by ${spdLost} (${originalSpd} → ${challengerPal.stats.spd})`);
                 }
             }
             
-            // Apply Terror From Below (defReduction) - reduces opponent's defense
+            // Apply Terror From Below
             if (challengerPal.skillBonuses?.defReduction) {
                 const defReduction = challengerPal.skillBonuses.defReduction;
                 const originalDef = opponentPal.stats.def;
@@ -1006,7 +896,6 @@ module.exports = {
                 }
             }
             
-            // Apply Terror From Below from opponent to challenger
             if (opponentPal.skillBonuses?.defReduction) {
                 const defReduction = opponentPal.skillBonuses.defReduction;
                 const originalDef = challengerPal.stats.def;
@@ -1022,24 +911,30 @@ module.exports = {
             let challengerReviveUsed = false;
             let opponentReviveUsed = false;
             let areaAttackData = null;
+            let challengerResonanceStacks = 0;
+            let opponentResonanceStacks = 0;    
             const createParadoxState = () => ({
                 active: false,
                 pendingRecoil: false,
                 storedDamage: 0,
-                recoilPercent: 0.5
+                recoilPercent: 0.4,
+                recoilTurn: null
             });
             const challengerParadox = createParadoxState();
             const opponentParadox = createParadoxState();
 
-            const applyParadoxRecoil = (state, currentHp, palLabel) => {
-                if (!state.pendingRecoil) return currentHp;
+            const applyParadoxRecoil = (state, defenderHp, attackerHp, defenderLabel, attackerLabel, currentTurn) => {
+                if (!state.pendingRecoil) return { defenderHp, attackerHp };
+                if (state.recoilTurn !== null && currentTurn < state.recoilTurn) return { defenderHp, attackerHp };
                 if (state.storedDamage > 0) {
-                    combatEngine.logger.add(`⏰ **Temporal Recoil!** ${palLabel} takes ${state.storedDamage} delayed damage!`);
-                    currentHp = Math.max(0, currentHp - state.storedDamage);
+                    combatEngine.logger.add(`⏰ **Temporal Reflection!** The attack reverses through time!`);
+                    combatEngine.logger.add(`💫 **${attackerLabel}** takes ${state.storedDamage} reflected damage!`);
+                    attackerHp = Math.max(0, attackerHp - state.storedDamage);
                 }
                 state.storedDamage = 0;
                 state.pendingRecoil = false;
-                return currentHp;
+                state.recoilTurn = null;
+                return { defenderHp, attackerHp };
             };
 
             const tryActivateParadox = (creature, creatureLabel, state) => {
@@ -1055,7 +950,6 @@ module.exports = {
 
             const handleParadoxBlock = (attackerCtx, defenderCtx, defenderState) => {
                 if (!defenderState.active) return false;
-                combatEngine.logger.add(`🔮 **${defenderCtx.name}** phases through time - attacks fail to connect!`);
                 const simulation = combatEngine.simulatePlayerAttack(
                     attackerCtx.pal,
                     defenderCtx.pal,
@@ -1074,6 +968,7 @@ module.exports = {
                 combatEngine.logger.add(`⏰ *Storing ${storedChunk} temporal damage (total ${defenderState.storedDamage}).*`);
                 defenderState.active = false;
                 defenderState.pendingRecoil = true;
+                defenderState.recoilTurn = turn + 1;
                 return true;
             };
             
@@ -1087,7 +982,6 @@ module.exports = {
                 );
                 challengerHp = challengerStatusResult.creature.currentHp;
                 challengerPal.statusEffects = challengerStatusResult.creature.statusEffects;
-                // CRITICAL FIX: Apply modified stats back to the creature for damage calculation
                 challengerPal.stats = challengerStatusResult.creature.stats;
                 combatEngine.logger.addMultiple(challengerStatusResult.battleLog);
                 
@@ -1097,7 +991,6 @@ module.exports = {
                 );
                 opponentHp = opponentStatusResult.creature.currentHp;
                 opponentPal.statusEffects = opponentStatusResult.creature.statusEffects;
-                // CRITICAL FIX: Apply modified stats back to the creature for damage calculation
                 opponentPal.stats = opponentStatusResult.creature.stats;
                 combatEngine.logger.addMultiple(opponentStatusResult.battleLog);
                 
@@ -1134,19 +1027,39 @@ module.exports = {
                     tryActivateParadox(secondAttacker.pal, secondAttacker.name, defenderParadoxState);
                     const attackBlocked = handleParadoxBlock(firstAttacker, secondAttacker, defenderParadoxState);
 
+                    if (firstAttacker.pal.skillBonuses?.resonanceStacks) {
+                        firstAttacker.pal.resonanceStack = firstAttacker.pal === challengerPal ? challengerResonanceStacks : opponentResonanceStacks;
+                    }
+
                     if (!attackBlocked) {
                         const attackResult = combatEngine.executeAttack(
-                            firstAttacker.pal, secondAttacker.pal, firstAttacker.type, secondAttacker.type,
+                            { ...firstAttacker.pal, currentHp: firstAttacker.hp },
+                            { ...secondAttacker.pal, currentHp: secondAttacker.hp },
+                            firstAttacker.type, secondAttacker.type,
                             firstAttacker.equipment, firstAttacker.potion, {},
-                            firstAttacker.name, secondAttacker.name, secondAttacker.equipment
+                            firstAttacker.name, secondAttacker.name, secondAttacker.equipment,
+                            { defenderPotionEffects: secondAttacker.potion }
                         );
                         
                         secondAttacker.hp = Math.max(0, secondAttacker.hp - attackResult.damage);
+
+                        if (attackResult.hpSacrificed) {
+                            firstAttacker.hp = Math.max(1, firstAttacker.hp - attackResult.hpSacrificed);
+                        }
+
+                        if (attackResult.resonanceStacks !== undefined) {
+                            if (firstAttacker.pal === challengerPal) {
+                                challengerResonanceStacks = attackResult.resonanceStacks;
+                            } else {
+                                opponentResonanceStacks = attackResult.resonanceStacks;
+                            }
+                        }
+
                         firstAttacker.hp = Math.min(firstAttacker.pal.stats.hp, firstAttacker.hp + (attackResult.lifesteal || 0));
                         
                         if (attackResult.counterDamage > 0) {
                             firstAttacker.hp = Math.max(0, firstAttacker.hp - attackResult.counterDamage);
-                            combatEngine.logger.add(`💥 **Reflected damage:** ${firstAttacker.name} takes **${attackResult.counterDamage}** damage!`);
+                            combatEngine.logger.add(`💥 **Counter damage:** ${firstAttacker.name} takes **${attackResult.counterDamage}** damage!`);
                         }
 
                         if (attackResult.reflectedDamage > 0) {
@@ -1172,7 +1085,6 @@ module.exports = {
                             } else {
                                 combatEngine.logger.add(`💀 **${secondAttacker.name}** has been defeated!`);
                                 
-                                // Update HP tracking before breaking
                                 if (turnOrder.first === challengerPal) {
                                     challengerHp = firstAttacker.hp;
                                     opponentHp = secondAttacker.hp;
@@ -1194,12 +1106,18 @@ module.exports = {
 
                     if (!attackBlocked) {
                         const counterResult = combatEngine.executeAttack(
-                            secondAttacker.pal, firstAttacker.pal, secondAttacker.type, firstAttacker.type,
+                            { ...secondAttacker.pal, currentHp: secondAttacker.hp },
+                            { ...firstAttacker.pal, currentHp: firstAttacker.hp },
+                            secondAttacker.type, firstAttacker.type,
                             secondAttacker.equipment, secondAttacker.potion, {},
-                            secondAttacker.name, firstAttacker.name, firstAttacker.equipment
+                            secondAttacker.name, firstAttacker.name, firstAttacker.equipment,
+                            { defenderPotionEffects: firstAttacker.potion }
                         );
                         
                         firstAttacker.hp = Math.max(0, firstAttacker.hp - counterResult.damage);
+                        if (counterResult.hpSacrificed) {
+                            secondAttacker.hp = Math.max(1, secondAttacker.hp - counterResult.hpSacrificed);
+                        }
                         secondAttacker.hp = Math.min(secondAttacker.pal.stats.hp, secondAttacker.hp + (counterResult.lifesteal || 0));
                         
                         if (counterResult.counterDamage > 0) {
@@ -1221,13 +1139,12 @@ module.exports = {
                             } else {
                                 combatEngine.logger.add(`💀 **${firstAttacker.name}** has been defeated!`);
                                 
-                                // Update HP tracking before breaking
                                 if (turnOrder.first === challengerPal) {
-                                    challengerHp = firstAttacker.hp;
+                                    challengerHp = 0;
                                     opponentHp = secondAttacker.hp;
                                 } else {
                                     challengerHp = secondAttacker.hp;
-                                    opponentHp = firstAttacker.hp;
+                                    opponentHp = 0;
                                 }
                                 break;
                             }
@@ -1236,7 +1153,6 @@ module.exports = {
                     }
                 }
                 
-                // Update HP after turn completes normally
                 if (turnOrder.first === challengerPal) {
                     challengerHp = firstAttacker.hp;
                     opponentHp = secondAttacker.hp;
@@ -1251,26 +1167,35 @@ module.exports = {
                 
                 challengerHp = combatEngine.applyHealingEffects(challengerPal, challengerHp, challengerNickname);
                 opponentHp = combatEngine.applyHealingEffects(opponentPal, opponentHp, opponentNickname);
-           
-                challengerHp = applyParadoxRecoil(
+            
+                const challengerReflect = applyParadoxRecoil(
                     challengerParadox,
                     challengerHp,
-                    `${challengerUser.displayName}'s ${challengerNickname}`
+                    opponentHp,
+                    `${challengerUser.displayName}'s ${challengerNickname}`,
+                    `${opponentUser.displayName}'s ${opponentNickname}`,
+                    turn
                 );
-                opponentHp = applyParadoxRecoil(
+                challengerHp = challengerReflect.defenderHp;
+                opponentHp = challengerReflect.attackerHp;
+
+                const opponentReflect = applyParadoxRecoil(
                     opponentParadox,
                     opponentHp,
-                    `${opponentUser.displayName}'s ${opponentNickname}`
-                );               
+                    challengerHp,
+                    `${opponentUser.displayName}'s ${opponentNickname}`,
+                    `${challengerUser.displayName}'s ${challengerNickname}`,
+                    turn
+                );
+                opponentHp = opponentReflect.defenderHp;
+                challengerHp = opponentReflect.attackerHp;          
                 
-                // Display HP after each turn 
                 if (challengerHp > 0 && opponentHp > 0) {
                     combatEngine.logger.add(`\n💚 **${challengerNickname}:** ${challengerHp}/${challengerPal.stats.hp} HP | **${opponentNickname}:** ${opponentHp}/${opponentPal.stats.hp} HP`);
                     combatEngine.logger.add("\u200B");
                 }
             }
             
-            // Determine winner
             let winnerId;
             if (turn >= COMBAT_CONFIG.MAX_TURNS) {
                 combatEngine.logger.add("\n⏱️ Battle ended in a draw - both pets exhausted");
@@ -1280,7 +1205,6 @@ module.exports = {
             } else if (opponentHp > 0 && challengerHp <= 0) {
                 winnerId = opponentUser.id;
             } else {
-                // Both at 0 or both alive (shouldn't happen)
                 winnerId = null;
             }
             
@@ -1301,30 +1225,13 @@ module.exports = {
         }
     },
 
-    checkForAreaAttack(pal) {
-        // Check for elemental storm
-        if (pal.skillBonuses?.stormChance && pal.skillBonuses?.areaAttack) {
-            return Math.random() < pal.skillBonuses.stormChance;
-        }
-        
-        // Check for abyssal devourer
-        if (pal.skillBonuses?.areaDamage) {
-            return Math.random() < (pal.skillBonuses.abyssalChance || 0.1);
-        }
-        
-        return false;
-    },
-
     calculateAreaDamage(pal) {
-        // FIXED: Reduce area damage significantly
-        const baseMultiplier = PARTY_BATTLE_CONFIG.AREA_DAMAGE_MULTIPLIER; // 0.3
+        const baseMultiplier = PARTY_BATTLE_CONFIG.AREA_DAMAGE_MULTIPLIER;
         
-        // Elemental storm
         if (pal.skillBonuses?.damage && pal.skillBonuses?.areaAttack) {
             return Math.floor(pal.stats.atk * (pal.skillBonuses.damage || 2.5) * baseMultiplier);
         }
         
-        // Abyssal devourer
         if (pal.skillBonuses?.areaDamage) {
             return Math.floor(pal.stats.atk * pal.skillBonuses.areaDamage * baseMultiplier);
         }
@@ -1344,31 +1251,35 @@ module.exports = {
             const targetTeam = areaAttackData.targetIsChallenger ? challenger : opponent;
             const targetActiveIndex = areaAttackData.targetIsChallenger ? challengerActiveIndex : opponentActiveIndex;
 
-            // FIXED: Apply area damage to waiting pets and store it
             for (let i = targetActiveIndex + 1; i < PARTY_BATTLE_CONFIG.MAX_PETS; i++) {
                 const waitingPet = targetTeam.pals[i];
                 if (!waitingPet) continue;
 
+                const waitingPetSkillTree = await SkillTree.findOne({ palId: waitingPet.petId });
+                const enhancedWaitingPet = waitingPetSkillTree ? await SkillManager.applySkillBonuses(waitingPet, waitingPetSkillTree, 'party', {}) : waitingPet;
                 const petData = GameData.getPet(waitingPet.basePetId);
                 const petType = petData?.type || "Beast";
                 const resistances = EquipmentManager.getResistances(waitingPet.equipment);
                 
                 let actualDamage = areaAttackData.damage;
                 
-                // Apply type advantage
                 const typeMultiplier = TypeAdvantage.calculate(areaAttackData.attackerType, petType);
                 actualDamage = Math.floor(actualDamage * typeMultiplier);
                 
-                // Apply resistances
                 if (resistances.fire || resistances.ice || resistances.storm) {
                     const totalResist = (resistances.fire || 0) + (resistances.ice || 0) + (resistances.storm || 0);
                     const resistMultiplier = Math.max(0.1, 1 - totalResist / 300);
                     actualDamage = Math.floor(actualDamage * resistMultiplier);
                 }
 
+                if (enhancedWaitingPet.skillBonuses?.aoeProtect && enhancedWaitingPet.skillBonuses?.barrierAbsorb) {
+                    const absorbedAmount = Math.floor(actualDamage * enhancedWaitingPet.skillBonuses.barrierAbsorb);
+                    actualDamage -= absorbedAmount;
+                    areaLogs.push(`🛡️ **${waitingPet.nickname}**'s Celestial Barrier absorbs ${absorbedAmount} area damage!`);
+                }
+
                 actualDamage = Math.max(1, actualDamage);
 
-                // FIXED: Accumulate damage instead of applying immediately
                 if (!waitingPet.areaDamage) waitingPet.areaDamage = 0;
                 waitingPet.areaDamage += actualDamage;
 
@@ -1387,127 +1298,6 @@ module.exports = {
         }
 
         return areaLogs;
-    },
-
-    applyPotionEffects(pal, potion) {
-        if (!potion) return StatManager.cloneCreature(pal);
-
-        try {
-            const enhancedPal = StatManager.cloneCreature(pal);
-            const effect = potion.effect;
-
-            if (!effect) return enhancedPal;
-
-            switch (effect.type) {
-                case "heal":
-                    enhancedPal.stats.hp += effect.value;
-                    break;
-                    
-                case "stat_boost":
-                    // Handle both formats: { stat: 'atk', value: 10 } or { stats: { atk: 10 } }
-                    if (effect.stats) {
-                        // New format: stats object
-                        Object.entries(effect.stats).forEach(([stat, value]) => {
-                            if (enhancedPal.stats[stat] !== undefined) {
-                                enhancedPal.stats[stat] += value;
-                            }
-                        });
-                    } else if (effect.stat && effect.value !== undefined) {
-                        // Old format: stat and value
-                        if (enhancedPal.stats[effect.stat] !== undefined) {
-                            enhancedPal.stats[effect.stat] += effect.value;
-                        }
-                    }
-                    break;
-                    
-                case "multi_boost":
-                    Object.entries(effect.stats || {}).forEach(([stat, value]) => {
-                        if (enhancedPal.stats[stat] !== undefined) {
-                            enhancedPal.stats[stat] += value;
-                        }
-                    });
-                    break;
-                    
-                case "trade_boost":
-                    Object.entries(effect.gain || {}).forEach(([stat, value]) => {
-                        if (enhancedPal.stats[stat] !== undefined) {
-                            enhancedPal.stats[stat] += value;
-                        }
-                    });
-                    Object.entries(effect.lose || {}).forEach(([stat, value]) => {
-                        if (enhancedPal.stats[stat] !== undefined) {
-                            enhancedPal.stats[stat] -= value;
-                        }
-                    });
-                    break;
-                    
-                case "resistance":
-                    if (!enhancedPal.resistances) enhancedPal.resistances = {};
-                    enhancedPal.resistances[effect.element] = 
-                        (enhancedPal.resistances[effect.element] || 0) + effect.value;
-                    break;
-                    
-                case "familiar_type_boost":
-                    const palData = GameData.getPet(pal.basePetId);
-                    const palType = palData?.type || "Beast";
-                    if (palType.toLowerCase() === effect.target.toLowerCase()) {
-                        Object.entries(effect.stats || {}).forEach(([stat, value]) => {
-                            if (enhancedPal.stats[stat] !== undefined) {
-                                enhancedPal.stats[stat] += value;
-                            }
-                        });
-                    }
-                    break;
-                    
-                case "special":
-                    if (effect.bonus_luck) {
-                        enhancedPal.stats.luck = (enhancedPal.stats.luck || 0) + effect.bonus_luck;
-                    }
-                    if (effect.crit_bonus) {
-                        enhancedPal.stats.luck = (enhancedPal.stats.luck || 0) + effect.crit_bonus;
-                    }
-                    break;
-            }
-
-            enhancedPal.stats = StatManager.validateStats(enhancedPal.stats);
-            return enhancedPal;
-        } catch (error) {
-            console.error("Error applying potion effects:", error);
-            return StatManager.cloneCreature(pal);
-        }
-    },
-
-    getPotionEffects(potion) {
-        if (!potion?.effect) return {};
-
-        const effects = {};
-        const effect = potion.effect;
-
-        if (effect.type === "special") {
-            effects.special = {
-                ability: effect.ability,
-                chance: effect.chance || 0.25,
-                duration: effect.duration,
-            };
-            // Handle bonus stats from special effects
-            if (effect.bonus_luck) {
-                effects.bonus_luck = effect.bonus_luck;
-            }
-            if (effect.crit_bonus) {
-                effects.crit_bonus = effect.crit_bonus;
-            }
-        }
-        
-        // Handle multi_element type
-        if (effect.type === "multi_element") {
-            effects.multi_element = {
-                elements: effect.elements || [],
-                damage_boost: effect.damage_boost || 0,
-                duration: effect.duration,
-            };
-        }
-
-        return effects;
     },
 
     async sendBattleResults(message, battleLog, overallWinner, challengerWon) {
@@ -1556,11 +1346,6 @@ module.exports = {
                 if (currentLog.trim()) {
                     logs.push(currentLog.trim());
                     currentLog = "";
-                }
-                
-                if (line.length > maxLength) {
-                    logs.push(line.substring(0, maxLength - 3) + "...");
-                    continue;
                 }
             }
             currentLog += line + "\n";

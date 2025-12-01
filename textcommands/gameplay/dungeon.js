@@ -115,161 +115,6 @@ class DungeonManager {
 }
 
 /**
- * Potion Manager - handles potion selection and effects
- */
-class PotionManager {
-    static getAvailablePotions(player) {
-        return player.inventory.filter((item) => {
-            const itemData = GameData.getItem(item.itemId);
-            return itemData && itemData.type === "potion" && item.quantity > 0;
-        });
-    }
-
-    static async consumePotion(userId, potionId) {
-        if (potionId === "none") return null;
-
-        const player = await Player.findOne({ userId });
-        const potionItem = player.inventory.find(item => item.itemId === potionId);
-        
-        if (!potionItem) return null;
-
-        potionItem.quantity -= 1;
-        if (potionItem.quantity <= 0) {
-            player.inventory = player.inventory.filter(item => item.itemId !== potionId);
-        }
-        await player.save();
-
-        return GameData.getItem(potionId);
-    }
-
-    static applyPotionEffects(pal, potion) {
-        if (!potion) return StatManager.cloneCreature(pal);
-
-        try {
-            const enhancedPal = StatManager.cloneCreature(pal);
-            const effect = potion.effect;
-
-            if (!effect) return enhancedPal;
-
-            switch (effect.type) {
-                case "heal":
-                    enhancedPal.stats.hp += effect.value;
-                    break;
-                    
-                case "stat_boost":
-                    // Handle both formats: { stat: 'atk', value: 10 } or { stats: { atk: 10 } }
-                    if (effect.stats) {
-                        // New format: stats object
-                        Object.entries(effect.stats).forEach(([stat, value]) => {
-                            if (enhancedPal.stats[stat] !== undefined) {
-                                enhancedPal.stats[stat] += value;
-                            }
-                        });
-                    } else if (effect.stat && effect.value !== undefined) {
-                        // Old format: stat and value
-                        if (enhancedPal.stats[effect.stat] !== undefined) {
-                            enhancedPal.stats[effect.stat] += effect.value;
-                        }
-                    }
-                    break;
-                    
-                case "multi_boost":
-                    Object.entries(effect.stats || {}).forEach(([stat, value]) => {
-                        if (enhancedPal.stats[stat] !== undefined) {
-                            enhancedPal.stats[stat] += value;
-                        }
-                    });
-                    break;
-                    
-                case "trade_boost":
-                    // Apply gains
-                    Object.entries(effect.gain || {}).forEach(([stat, value]) => {
-                        if (enhancedPal.stats[stat] !== undefined) {
-                            enhancedPal.stats[stat] += value;
-                        }
-                    });
-                    // Apply losses
-                    Object.entries(effect.lose || {}).forEach(([stat, value]) => {
-                        if (enhancedPal.stats[stat] !== undefined) {
-                            enhancedPal.stats[stat] -= value;
-                        }
-                    });
-                    break;
-                    
-                case "resistance":
-                    if (!enhancedPal.resistances) enhancedPal.resistances = {};
-                    enhancedPal.resistances[effect.element] = 
-                        (enhancedPal.resistances[effect.element] || 0) + effect.value;
-                    break;
-                    
-                case "familiar_type_boost":
-                    const palData = GameData.getPet(pal.basePetId);
-                    const palType = palData?.type || "Beast";
-                    if (palType.toLowerCase() === effect.target.toLowerCase()) {
-                        Object.entries(effect.stats || {}).forEach(([stat, value]) => {
-                            if (enhancedPal.stats[stat] !== undefined) {
-                                enhancedPal.stats[stat] += value;
-                            }
-                        });
-                    }
-                    break;
-                    
-                case "special":
-                    // Special abilities handled in getPotionEffects
-                    // But apply bonus stats here
-                    if (effect.bonus_luck) {
-                        enhancedPal.stats.luck = (enhancedPal.stats.luck || 0) + effect.bonus_luck;
-                    }
-                    if (effect.crit_bonus) {
-                        enhancedPal.stats.luck = (enhancedPal.stats.luck || 0) + effect.crit_bonus;
-                    }
-                    break;
-            }
-
-            // Ensure stats remain valid
-            enhancedPal.stats = StatManager.validateStats(enhancedPal.stats);
-            return enhancedPal;
-        } catch (error) {
-            console.error("Error applying potion effects:", error);
-            return StatManager.cloneCreature(pal);
-        }
-    }
-
-    static getPotionEffects(potion) {
-        if (!potion?.effect) return {};
-
-        const effects = {};
-        const effect = potion.effect;
-
-        if (effect.type === "special") {
-            effects.special = {
-                ability: effect.ability,
-                chance: effect.chance || 0.25,
-                duration: effect.duration,
-            };
-            // Handle bonus stats from special effects
-            if (effect.bonus_luck) {
-                effects.bonus_luck = effect.bonus_luck;
-            }
-            if (effect.crit_bonus) {
-                effects.crit_bonus = effect.crit_bonus;
-            }
-        }
-        
-        // Handle multi_element type
-        if (effect.type === "multi_element") {
-            effects.multi_element = {
-                elements: effect.elements || [],
-                damage_boost: effect.damage_boost || 0,
-                duration: effect.duration,
-            };
-        }
-
-        return effects;
-    }
-}
-
-/**
  * Reward Manager - handles dungeon rewards
  */
 class RewardManager {
@@ -454,25 +299,6 @@ class UIManager {
         );
     }
 
-    static createPotionSelectionMenu(availablePotions, sessionId) {
-        const potionOptions = availablePotions.map((item) => ({
-            label: `${GameData.getItem(item.itemId)?.name || 'Unknown'} (${item.quantity}x)`,
-            description: GameData.getItem(item.itemId)?.description?.substring(0, 100) || 'No description',
-            value: item.itemId,
-        }));
-        
-        potionOptions.unshift({
-            label: "No Potion",
-            description: "Enter without potions",
-            value: "none",
-        });
-
-        return new StringSelectMenuBuilder()
-            .setCustomId(`select_potion_dungeon_${sessionId}`)
-            .setPlaceholder("Select a potion to use (optional)...")
-            .addOptions(potionOptions);
-    }
-
     static createFightButtons(sessionId) {
         return new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -640,9 +466,9 @@ async function handleDungeonEntry(interaction, dungeon, client, reply, prefix, s
         const selectedPal = await DungeonManager.selectPreferredPal(player, availablePals);
 
         if (selectedPal) {
-            // Skip selection, go directly to potion phase
+            // Skip selection, go directly to dungeon start
             await SkillManager.ensureSkillTree(selectedPal);
-            await runPotionPhase(interaction, selectedPal, dungeon, reply, client, sessionId);
+            await runDungeon(interaction, selectedPal, dungeon, client, sessionId);
         } else {
             // Show pal selection
             await showPalSelection(interaction, availablePals, dungeon, reply, client, sessionId);
@@ -708,7 +534,8 @@ async function showPalSelection(interaction, availablePals, dungeon, reply, clie
                 }
 
                 await SkillManager.ensureSkillTree(selectedPal);
-                await runPotionPhase(sel, selectedPal, dungeon, reply, client, sessionId);
+                // Proceed directly to dungeon run
+                await runDungeon(sel, selectedPal, dungeon, client, sessionId);
             }
         } catch (error) {
             console.error("Pet selection error:", error);
@@ -724,60 +551,7 @@ async function showPalSelection(interaction, availablePals, dungeon, reply, clie
     });
 }
 
-async function runPotionPhase(interaction, pal, dungeon, reply, client, sessionId) {
-    if (!sessionManager.isValid(interaction.user.id, sessionId)) {
-        return;
-    }
-
-    try {
-        const player = await Player.findOne({ userId: interaction.user.id });
-        const availablePotions = PotionManager.getAvailablePotions(player);
-
-        if (availablePotions.length > 0) {
-            await interaction.update({
-                embeds: [
-                    createInfoEmbed("Select Potion", "Choose a potion to enhance your Pal."),
-                ],
-                components: [new ActionRowBuilder().addComponents(
-                    UIManager.createPotionSelectionMenu(availablePotions, sessionId)
-                )],
-            });
-
-            const potionCollector = reply.createMessageComponentCollector({
-                filter: (i) => i.user.id === interaction.user.id && sessionManager.isValid(i.user.id, sessionId),
-                time: 2 * 60000,
-                componentType: ComponentType.StringSelect,
-            });
-
-            potionCollector.on("collect", async (potionInteraction) => {
-                try {
-                    potionCollector.stop();
-                    const selectedPotionId = potionInteraction.values[0];
-                    const selectedPotion = await PotionManager.consumePotion(interaction.user.id, selectedPotionId);
-                    await runDungeon(potionInteraction, pal, dungeon, client, selectedPotion, sessionId);
-                } catch (error) {
-                    console.error("Potion selection error:", error);
-                    sessionManager.cleanup(interaction.user.id);
-                    await handleInteractionError(potionInteraction, "An error occurred during potion selection.");
-                }
-            });
-
-            potionCollector.on("end", (collected) => {
-                if (collected.size === 0) {
-                    sessionManager.cleanup(interaction.user.id);
-                }
-            });
-        } else {
-            await runDungeon(interaction, pal, dungeon, client, null, sessionId);
-        }
-    } catch (error) {
-        console.error("Potion phase error:", error);
-        sessionManager.cleanup(interaction.user.id);
-        await handleInteractionError(interaction, "An error occurred during potion selection.");
-    }
-}
-
-async function runDungeon(interaction, pal, dungeon, client, selectedPotion = null, sessionId) {
+async function runDungeon(interaction, pal, dungeon, client, sessionId) {
     if (!sessionManager.isValid(interaction.user.id, sessionId)) {
         return;
     }
@@ -785,27 +559,25 @@ async function runDungeon(interaction, pal, dungeon, client, selectedPotion = nu
     try {
         let currentFloor = 1;
         const sessionRewards = RewardManager.initializeRewards();
-        const potionEffects = PotionManager.getPotionEffects(selectedPotion);
         
-        // Get pal type and apply potion effects
-        const palData = GameData.getPet(pal.basePetId);
-        const palType = palData?.type || "Beast";
-        const enhancedPal = PotionManager.applyPotionEffects(pal, selectedPotion);
+        // Potion stats are already applied in DB, we just need the pal object
+        const enhancedPal = StatManager.cloneCreature(pal);
+        
+        // Extract active potion abilities for combat engine (like shadow_strike, resistances)
+        const potionEffects = Utils.extractPotionAbilities(pal);
+        
         let palCurrentHp = enhancedPal.stats.hp;
-
-        // Show potion consumption
-        if (selectedPotion) {
-            const potionEmbed = createSuccessEmbed(
-                "Potion Applied!",
-                `Your **${pal.nickname}** consumed a **${selectedPotion.name}** and feels empowered!`,
-            );
-            await interaction.update({ embeds: [potionEmbed], components: [] });
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-        }
 
         // Set pal status
         pal.status = "Exploring";
         await pal.save();
+
+        // Update UI to show we are entering
+        await interaction.update({
+            embeds: [createSuccessEmbed("Expedition Started!", `**${pal.nickname}** enters **${dungeon.name}**...`)],
+            components: []
+        });
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
         // Show active skills
         const skillTree = await SkillManager.ensureSkillTree(pal);
@@ -840,7 +612,7 @@ async function runDungeon(interaction, pal, dungeon, client, selectedPotion = nu
                 {
                     fields: [
                         {
-                            name: `${pal.nickname} (Your ${palType} Pal)`,
+                            name: `${pal.nickname} (Your ${GameData.getPet(pal.basePetId)?.type || "Beast"} Pal)`,
                             value: `❤️ HP: ${palCurrentHp}/${enhancedPal.stats.hp}${
                                 skillTree && skillTree.unlockedSkills.length > 0
                                     ? `\n🎯 Skills: ${skillTree.unlockedSkills.length} active`
@@ -931,11 +703,12 @@ async function runDungeon(interaction, pal, dungeon, client, selectedPotion = nu
                 // Use the new combat engine
                 const combatEngine = new CombatEngine();
                 const equipmentEffects = EquipmentManager.getEffects(enhancedPal.equipment);
+                const palType = GameData.getPet(pal.basePetId)?.type || "Beast";
                 
                 const battleResult = await combatEngine.simulateDungeonBattle(
                     enhancedPal,
                     enemy,
-                    potionEffects,
+                    potionEffects, // Use extracted abilities
                     equipmentEffects,
                     palCurrentHp,
                     palType,

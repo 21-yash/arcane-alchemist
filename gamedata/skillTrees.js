@@ -4,28 +4,27 @@ module.exports = {
         skills: {
             pack_hunter: {
                 name: 'Pack Hunter',
-                description: 'Increases damage when fighting alongside other Beasts',
+                description: 'Increases damage. Bonus doubled when fighting alongside other Beasts',
                 maxLevel: 3,
-                battleType: 'party',
+                battleType: 'any',
                 effects: [
-                    { level: 1, bonus: { atkMultiplier: 0.08 } },
-                    { level: 2, bonus: { atkMultiplier: 0.11 } },
-                    { level: 3, bonus: { atkMultiplier: 0.15, critChance: 0.1 } }
+                    { level: 1, bonus: { atkMultiplier: 0.06 } },
+                    { level: 2, bonus: { atkMultiplier: 0.09 } },
+                    { level: 3, bonus: { atkMultiplier: 0.12, critChance: 0.1 } }
                 ],
+                partyBonus: true,
                 prerequisites: []
             },
-            thick_hide: {
-                name: 'Thick Hide',
-                description: 'Natural armor that reduces incoming damage',
-                maxLevel: 5,
+            blood_frenzy: {
+                name: 'Blood Frenzy',
+                description: 'Deal bonus damage based on missing HP. The lower your HP, the stronger you become',
+                maxLevel: 3,
                 effects: [
-                    { level: 1, bonus: { defBonus: 5 } },
-                    { level: 2, bonus: { defBonus: 8 } },
-                    { level: 3, bonus: { defBonus: 12 } },
-                    { level: 4, bonus: { defBonus: 16 } },
-                    { level: 5, bonus: { defBonus: 20, statusResistance: { poison: 0.3 } } }
+                    { level: 1, bonus: { frenzyDamage: 0.5 } },
+                    { level: 2, bonus: { frenzyDamage: 0.75, critChance: 0.05 } },
+                    { level: 3, bonus: { frenzyDamage: 1.0, critChance: 0.1, lifeSteal: 0.1 } }
                 ],
-                prerequisites: []
+                prerequisites: ['pack_hunter']
             },
             feral_instinct: {
                 name: 'Feral Instinct',
@@ -43,9 +42,9 @@ module.exports = {
                 description: 'Ultimate Beast skill - devastating attacks against wounded enemies',
                 maxLevel: 1,
                 effects: [
-                    { level: 1, bonus: { executeThreshold: 0.3, executeMultiplier: 2.0 } }
+                    { level: 1, bonus: { executeThreshold: 0.5, executeMultiplier: 2.0 } }
                 ],
-                prerequisites: ['thick_hide', 'feral_instinct']
+                prerequisites: ['blood_frenzy', 'feral_instinct']
             }
         }
     },
@@ -82,7 +81,7 @@ module.exports = {
                 maxLevel: 2,
                 effects: [
                     { level: 1, bonus: { elementalAbsorb: 0.5, reflection: 0.2, shieldChance: 0.1 } },
-                    { level: 2, bonus: { elementalAbsorb: 0.75, reflection: 0.3, shieldChance: 0.15 } }
+                    { level: 2, bonus: { elementalAbsorb: 0.80, reflection: 0.3, shieldChance: 0.15 } }
                 ],
                 prerequisites: ['elemental_affinity']
             },
@@ -101,15 +100,15 @@ module.exports = {
     Mystic: {
         name: 'Arcane Wisdom',
         skills: {
-            mystical_insight: {
-                name: 'Mystical Insight',
-                description: 'Higher chance for critical hits and lucky events',
+            mystic_resonance: {
+                name: 'Mystic Resonance',
+                description: 'Each spell cast builds arcane resonance, stacking damage and unlocking devastating power',
                 maxLevel: 4,
                 effects: [
-                    { level: 1, bonus: { critChance: 0.05, luckBonus: 3 } },
-                    { level: 2, bonus: { critChance: 0.08, luckBonus: 5 } },
-                    { level: 3, bonus: { critChance: 0.12, luckBonus: 8 } },
-                    { level: 4, bonus: { critChance: 0.15, luckBonus: 12 } }
+                    { level: 1, bonus: { resonanceStacks: 3, resonancePerStack: 0.04 } },
+                    { level: 2, bonus: { resonanceStacks: 4, resonancePerStack: 0.05 } },
+                    { level: 3, bonus: { resonanceStacks: 5, resonancePerStack: 0.06 } },
+                    { level: 4, bonus: { resonanceStacks: 5, resonancePerStack: 0.08, maxResonanceBurst: 2.0 } }
                 ],
                 prerequisites: []
             },
@@ -124,24 +123,24 @@ module.exports = {
                 ],
                 prerequisites: []
             },
-            protective_ward: {
-                name: 'Protective Ward',
-                description: 'Shields against status effects and critical hits',
+           celestial_barrier: {
+                name: 'Celestial Barrier',
+                description: 'Create a shield that absorbs damage. Can absorb damage taken by area attacks.',
                 maxLevel: 2,
                 effects: [
-                    { level: 1, bonus: { statusResistance: 0.3, critResistance: 0.5 } },
-                    { level: 2, bonus: { statusResistance: 0.5, critResistance: 0.75 } }
+                    { level: 1, bonus: { barrierChance: 0.20, barrierAbsorb: 0.3 } },
+                    { level: 2, bonus: { barrierChance: 0.30, barrierAbsorb: 0.5, aoeProtect: true } }
                 ],
-                prerequisites: ['mystical_insight']
+                prerequisites: ['mystic_resonance']
             },
             divine_intervention: {
                 name: 'Divine Intervention',
-                description: 'Ultimate Mystic skill - chance to completely negate damage',
+                description: 'Ultimate Mystic skill - chance to completely negate damage and reflect harm back to attacker',
                 maxLevel: 1,
                 effects: [
-                    { level: 1, bonus: { divineProtection: 0.15, healOnDodge: true } }
+                    { level: 1, bonus: { divineProtection: 0.20, healOnDodge: true, divineRetribution: 0.5 } }
                 ],
-                prerequisites: ['healing_light', 'protective_ward']
+                prerequisites: ['healing_light', 'celestial_barrier']
             }
         }
     },
@@ -177,8 +176,8 @@ module.exports = {
                 description: 'Sacrifices HP for increased power',
                 maxLevel: 2,
                 effects: [
-                    { level: 1, bonus: { hpSacrifice: 0.25, powerBonus: 1.5, chance: 0.1 } },
-                    { level: 2, bonus: { hpSacrifice: 0.2, powerBonus: 1.8, chance: 0.15 } }
+                    { level: 1, bonus: { hpSacrifice: 0.30, powerBonus: 1.5, chance: 0.1 } },
+                    { level: 2, bonus: { hpSacrifice: 0.25, powerBonus: 1.8, chance: 0.15 } }
                 ],
                 prerequisites: ['undying_will']
             },
@@ -187,7 +186,7 @@ module.exports = {
                 description: 'Ultimate Undead skill - temporary invulnerability and massive power',
                 maxLevel: 1,
                 effects: [
-                    { level: 1, bonus: { invulnerability: 2, powerMultiplier: 2.5, chance: 0.15 } }
+                    { level: 1, bonus: { invulnerability: 1, powerMultiplier: 2.5, lichChance: 0.15 } }
                 ],
                 prerequisites: ['life_drain', 'dark_ritual']
             }
@@ -221,24 +220,24 @@ module.exports = {
                 ],
                 prerequisites: []
             },
+            perfect_machine: {
+                name: 'Perfect Machine',
+                description: 'Peak efficiency in all systems',
+                maxLevel: 1,
+                effects: [
+                    { level: 1, bonus: { allStats: 1.1, immuneToStatus: true, selfRepair: 0.1 } } //1.2
+                ],
+                prerequisites: ['armor_plating']
+            },
             energy_core: {
                 name: 'Energy Core',
-                description: 'Overloads systems for massive damage bursts',
+                description: 'Ultimate Mechanical skill - Overloads systems for massive damage bursts',
                 maxLevel: 2,
                 effects: [
                     { level: 1, bonus: { overloadChance: 0.1, overloadDamage: 2.0 } },
                     { level: 2, bonus: { overloadChance: 0.15, overloadDamage: 2.5, chainReaction: 0.2 } }
                 ],
-                prerequisites: ['armor_plating']
-            },
-            perfect_machine: {
-                name: 'Perfect Machine',
-                description: 'Ultimate Mechanical skill - peak efficiency in all systems',
-                maxLevel: 1,
-                effects: [
-                    { level: 1, bonus: { allStats: 1.05, immuneToStatus: true, selfRepair: 0.1 } } //1.2
-                ],
-                prerequisites: ['system_upgrade', 'energy_core']
+                prerequisites: ['system_upgrade', 'perfect_machine']
             }
         }
     },
@@ -252,8 +251,8 @@ module.exports = {
                 maxLevel: 3,
                 effects: [
                     { level: 1, bonus: { enemyAtkDown: 0.05, enemySpdDown: 0.05 } },
-                    { level: 2, bonus: { enemyAtkDown: 0.1, enemySpdDown: 0.08 } },
-                    { level: 3, bonus: { enemyAtkDown: 0.15, enemySpdDown: 0.12 } }
+                    { level: 2, bonus: { enemyAtkDown: 0.08, enemySpdDown: 0.08 } },
+                    { level: 3, bonus: { enemyAtkDown: 0.12, enemySpdDown: 0.12 } }
                 ],
                 prerequisites: []
             },
@@ -264,8 +263,8 @@ module.exports = {
                 effects: [
                     { level: 1, bonus: { dotDamage: 0.05 } },
                     { level: 2, bonus: { dotDamage: 0.08, drownChance: 0.1 } },
-                    { level: 3, bonus: { dotDamage: 0.12, drownChance: 0.15 } },
-                    { level: 4, bonus: { dotDamage: 0.15, drownChance: 0.2 } }
+                    { level: 3, bonus: { dotDamage: 0.10, drownChance: 0.15 } },
+                    { level: 4, bonus: { dotDamage: 0.12, drownChance: 0.2 } }
                 ],
                 prerequisites: []
             },
@@ -274,8 +273,8 @@ module.exports = {
                 description: 'Strikes fear into enemies, reducing their defenses.',
                 maxLevel: 2,
                 effects: [
-                    { level: 1, bonus: { fearChance: 0.15, defReduction: 0.1 } },
-                    { level: 2, bonus: { fearChance: 0.25, defReduction: 0.2, silenceChance: 0.1 } }
+                    { level: 1, bonus: { fearChance: 0.15, defReduction: 0.08 } },
+                    { level: 2, bonus: { fearChance: 0.25, defReduction: 0.12, silenceChance: 0.1 } }
                 ],
                 prerequisites: ['crushing_pressure']
             },
@@ -330,10 +329,10 @@ module.exports = {
             },
             paradox_loop: {
                 name: 'Paradox Loop',
-                description: 'Ultimate Aeonic skill - for one turn, the Pal becomes immune to damage, but takes a portion of that negated damage on its next turn.',
+                description: 'Ultimate Aeonic skill - the Pal becomes immune to damage, stores some amount of that damage, and after a short delay reflects it back to the attacker.',
                 maxLevel: 1,
                 effects: [
-                    { level: 1, bonus: { damageImmunity: 1, recoilPercent: 0.40, paradoxChance: 0.20 } }
+                    { level: 1, bonus: { damageImmunity: 1, recoilPercent: 0.50, paradoxChance: 0.20 } }
                 ],
                 prerequisites: ['precognition', 'temporal_echo']
             }

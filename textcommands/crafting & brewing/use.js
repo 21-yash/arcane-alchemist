@@ -1,13 +1,13 @@
 const { createArgEmbed, createErrorEmbed, createSuccessEmbed, createWarningEmbed, createInfoEmbed } = require('../../utils/embed');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const Pet = require('../../models/Pet');
 const Player = require('../../models/Player');
 const GameData = require('../../utils/gameData');
 const { grantPalLevels, calculateXpForNextLevel } = require('../../utils/leveling');
 const CommandHelpers = require('../../utils/commandHelpers');
 
-// Helper function to find item by partial name match (now uses CommandHelpers)
+// Helper function to find item by partial name match
 function findItemByName(inventory, itemName) {
-    // Create a temporary player object for CommandHelpers
     const tempPlayer = { inventory };
     return CommandHelpers.findItemInInventory(tempPlayer, itemName);
 }
@@ -44,21 +44,257 @@ function addEffectToPlayer(player, effectType, duration, strength, itemName) {
     });
 }
 
+// Helper function to clean expired potion effects from pal
+function cleanExpiredPotionEffects(pal) {
+    return removeExpiredPotionEffects(pal);
+} 
+
+// Helper function to check if pal already has a potion effect
+function checkPotionConflicts(pal, newPotionId, newEffectType) {
+    if (!pal.potionEffects || pal.potionEffects.length === 0) {
+        return { canUse: true };
+    }
+
+    // Clean expired effects first
+    cleanExpiredPotionEffects(pal);
+
+    // Check if same potion is already active
+    const existingPotionIndex = pal.potionEffects.findIndex(e => e.potionId === newPotionId);
+    if (existingPotionIndex !== -1) {
+        return {
+            canUse: false,
+            error: `**${pal.nickname}** already has **${pal.potionEffects[existingPotionIndex].source}** active! It will expire in ${formatDuration(pal.potionEffects[existingPotionIndex].expiresAt - Date.now())}.`
+        };
+    }
+
+    // Check if trying to use ability potion when one is already active
+    if (newEffectType === 'special' || newEffectType === 'multi_element') {
+        const existingAbilityEffect = pal.potionEffects.find(e => 
+            e.type === 'special' || e.type === 'multi_element'
+        );
+        if (existingAbilityEffect) {
+            return {
+                canUse: false,
+                requiresConfirmation: true,
+                existingEffect: existingAbilityEffect,
+                message: `**${pal.nickname}** already has **${existingAbilityEffect.source}** active (${formatDuration(existingAbilityEffect.expiresAt - Date.now())} remaining).\n\nUsing this potion will **replace** the existing ability. Are you sure?`
+            };
+        }
+    }
+
+    return { canUse: true };
+}
+
+// Helper function to add potion effect to pal and apply stats immediately
+function addPotionEffectToPal(pal, potionId, itemData) {
+    // Handle both single 'effect' or array 'effects' (taking the first one for potions)
+    const effect = itemData.effect || (itemData.effects ? itemData.effects[0] : null);
+    
+    if (!effect) return;
+
+    const expiresAt = Date.now() + effect.duration;
+    
+    // If replacing an ability potion, remove the old one's stats first
+    if (effect.type === 'special' || effect.type === 'multi_element') {
+        if (!pal.potionEffects) pal.potionEffects = [];
+        const oldAbilityEffect = pal.potionEffects.find(e => 
+            e.type === 'special' || e.type === 'multi_element'
+        );
+        
+        if (oldAbilityEffect) {
+            // Remove old ability effect stats if it had any
+            if (oldAbilityEffect.stats) {
+                Object.entries(oldAbilityEffect.stats).forEach(([stat, value]) => {
+                    if (pal.stats[stat] !== undefined) {
+                        pal.stats[stat] -= value;
+                    }
+                });
+            }
+            if (oldAbilityEffect.bonus_luck) {
+                pal.stats.luck = Math.max(0, pal.stats.luck - oldAbilityEffect.bonus_luck);
+            }
+            if (oldAbilityEffect.crit_bonus) {
+                pal.stats.luck = Math.max(0, pal.stats.luck - oldAbilityEffect.crit_bonus);
+            }
+        }
+        
+        pal.potionEffects = pal.potionEffects.filter(e => 
+            e.type !== 'special' && e.type !== 'multi_element'
+        );
+    }
+    
+    if (!pal.potionEffects) pal.potionEffects = [];
+
+    // **INSTANTLY APPLY STAT CHANGES TO PAL**
+    switch (effect.type) {
+        case 'stat_boost':
+        case 'multi_boost':
+            if (effect.stats) {
+                Object.entries(effect.stats).forEach(([stat, value]) => {
+                    if (pal.stats[stat] !== undefined) {
+                        pal.stats[stat] += value;
+                    }
+                });
+            }
+            break;
+            
+        case 'trade_boost':
+            if (effect.gain) {
+                Object.entries(effect.gain).forEach(([stat, value]) => {
+                    if (pal.stats[stat] !== undefined) {
+                        pal.stats[stat] += value;
+                    }
+                });
+            }
+            if (effect.lose) {
+                Object.entries(effect.lose).forEach(([stat, value]) => {
+                    if (pal.stats[stat] !== undefined) {
+                        pal.stats[stat] = Math.max(1, pal.stats[stat] - value);
+                    }
+                });
+            }
+            break;
+            
+        case 'familiar_type_boost':
+            // Only apply if pal matches target type
+            const GameData = require('../../utils/gameData');
+            const palData = GameData.getPet(pal.basePetId);
+            const palType = palData?.type || "Beast";
+            
+            if (effect.target && palType.toLowerCase() === effect.target.toLowerCase()) {
+                if (effect.stats) {
+                    Object.entries(effect.stats).forEach(([stat, value]) => {
+                        if (pal.stats[stat] !== undefined) {
+                            pal.stats[stat] += value;
+                        }
+                    });
+                }
+            }
+            break;
+            
+        case 'special':
+            // Apply bonus stats from special potions
+            if (effect.bonus_luck) {
+                pal.stats.luck += effect.bonus_luck;
+            }
+            if (effect.crit_bonus) {
+                pal.stats.luck += effect.crit_bonus;
+            }
+            break;
+            
+        case 'resistance':
+        case 'multi_element':
+            // These don't modify base stats, only stored in effects
+            break;
+    }
+
+    // Add new effect to tracking array
+    pal.potionEffects.push({
+        potionId: potionId,
+        type: effect.type,
+        expiresAt: expiresAt,
+        source: itemData.name,
+        stats: effect.stats || {},
+        element: effect.element,
+        value: effect.value,
+        gain: effect.gain,
+        lose: effect.lose,
+        target: effect.target,
+        ability: effect.ability,
+        chance: effect.chance,
+        bonus_luck: effect.bonus_luck,
+        crit_bonus: effect.crit_bonus,
+        elements: effect.elements,
+        damage_boost: effect.damage_boost
+    });
+}
+
+// Helper function to remove expired potion effects and revert their stat changes
+function removeExpiredPotionEffects(pal) {
+    if (!pal.potionEffects || pal.potionEffects.length === 0) return false;
+    
+    const now = Date.now();
+    const expiredEffects = pal.potionEffects.filter(effect => effect.expiresAt && effect.expiresAt < now);
+    
+    if (expiredEffects.length === 0) return false;
+    
+    // Revert stats from expired effects
+    expiredEffects.forEach(effect => {
+        switch (effect.type) {
+            case 'stat_boost':
+            case 'multi_boost':
+                if (effect.stats) {
+                    Object.entries(effect.stats).forEach(([stat, value]) => {
+                        if (pal.stats[stat] !== undefined) {
+                            pal.stats[stat] = Math.max(stat === 'hp' ? 1 : 0, pal.stats[stat] - value);
+                        }
+                    });
+                }
+                break;
+                
+            case 'trade_boost':
+                // Revert the trade: remove gains, restore losses
+                if (effect.gain) {
+                    Object.entries(effect.gain).forEach(([stat, value]) => {
+                        if (pal.stats[stat] !== undefined) {
+                            pal.stats[stat] = Math.max(stat === 'hp' ? 1 : 0, pal.stats[stat] - value);
+                        }
+                    });
+                }
+                if (effect.lose) {
+                    Object.entries(effect.lose).forEach(([stat, value]) => {
+                        if (pal.stats[stat] !== undefined) {
+                            pal.stats[stat] += value;
+                        }
+                    });
+                }
+                break;
+                
+            case 'familiar_type_boost':
+                const GameData = require('../../utils/gameData');
+                const palData = GameData.getPet(pal.basePetId);
+                const palType = palData?.type || "Beast";
+                
+                if (effect.target && palType.toLowerCase() === effect.target.toLowerCase()) {
+                    if (effect.stats) {
+                        Object.entries(effect.stats).forEach(([stat, value]) => {
+                            if (pal.stats[stat] !== undefined) {
+                                pal.stats[stat] = Math.max(stat === 'hp' ? 1 : 0, pal.stats[stat] - value);
+                            }
+                        });
+                    }
+                }
+                break;
+                
+            case 'special':
+                if (effect.bonus_luck) {
+                    pal.stats.luck = Math.max(0, pal.stats.luck - effect.bonus_luck);
+                }
+                if (effect.crit_bonus) {
+                    pal.stats.luck = Math.max(0, pal.stats.luck - effect.crit_bonus);
+                }
+                break;
+        }
+    });
+    
+    // Remove expired effects from array
+    pal.potionEffects = pal.potionEffects.filter(effect => !effect.expiresAt || effect.expiresAt >= now);
+    
+    return expiredEffects.length > 0; // Return true if any were removed
+}
+
 // Helper function to find pal with better error messages
 async function findPal(message, args, player, prefix) {
-    // Check if the last argument is a number (pal ID)
     const lastArg = args[args.length - 1];
     const potentialId = parseInt(lastArg);
     
     if (!isNaN(potentialId) && args.length > 1) {
-        // Pal ID was provided
         const petResult = await CommandHelpers.validatePet(message.author.id, potentialId, prefix);
         if (!petResult.success) {
             return { error: petResult.embed };
         }
         return { pal: petResult.pet, palIdProvided: true };
     } else {
-        // No pal ID provided, try to use selected pet
         if (player.preferences?.selectedPet) {
             const pet = await Pet.findOne({ ownerId: message.author.id, petId: player.preferences.selectedPet });
             if (!pet) {
@@ -110,16 +346,12 @@ module.exports = {
             let quantity = 1;
             let palId = null;
             
-            // Parse args for quantity and pal ID
             for (let i = 1; i < args.length; i++) {
                 const arg = args[i];
-                
-                // Check for quantity patterns: qty:2, x2, 2x
                 if (arg.startsWith('qty:') || arg.startsWith('x') || arg.endsWith('x')) {
                     const num = parseInt(arg.replace(/qty:|x/gi, ''));
                     if (!isNaN(num)) quantity = Math.max(1, Math.min(100, num));
                 } 
-                // Otherwise treat as pal ID
                 else {
                     const num = parseInt(arg);
                     if (!isNaN(num)) palId = num;
@@ -130,7 +362,6 @@ module.exports = {
             const { item: itemInInventory, itemId } = findItemByName(player.inventory, itemName);
             
             if (!itemInInventory) {
-                // Show similar items if any exist
                 const similarItems = player.inventory
                     .filter(i => {
                         const itemData = GameData.getItem(i.itemId);
@@ -156,14 +387,12 @@ module.exports = {
                 });
             }
 
-            // Check if item is usable
             if (!itemData.usable) {
                 return message.reply({ 
                     embeds: [createWarningEmbed('Not Usable', `${CommandHelpers.getItemEmoji(itemData.name)} **${itemData.name}** cannot be used directly.`)] 
                 });
             }
 
-            // Check quantity
             if (itemInInventory.quantity < quantity) {
                 return message.reply({ 
                     embeds: [createWarningEmbed(
@@ -173,7 +402,7 @@ module.exports = {
                 });
             }
 
-            const effect = itemData.effects || itemData.effect; // Support both formats
+            const effect = itemData.effects || itemData.effect;
             if (!effect) {
                 return message.reply({ 
                     embeds: [createWarningEmbed('No Effect', `**${itemData.name}** has no defined effects.`)] 
@@ -181,16 +410,15 @@ module.exports = {
             }
 
             let successMessage = '';
-            let needsPal = ['heal', 'level_up', 'stat_boost', 'cure'].includes(effect.type);
+            // Added new effect types to needsPal list
+            let needsPal = ['heal', 'level_up', 'stat_boost', 'multi_boost', 'resistance', 'trade_boost', 'familiar_type_boost', 'special', 'multi_element', 'cure'].includes(effect.type);
             
-            // Handle items that don't need a pal (lures, essences)
             if (!needsPal) {
                 switch (effect.type) {
                     case 'pal_lure':
                     case 'rare_pal_lure':
                     case 'legendary_pal_lure':
-                        // Apply lure effect to player
-                        const duration = effect.duration || (30 * 60 * 1000); // 30 minutes default
+                        const duration = effect.duration || (30 * 60 * 1000); 
                         const strength = effect.strength || 1.25;
                         
                         addEffectToPlayer(player, itemData.type, duration, strength, itemData.name);
@@ -203,7 +431,6 @@ module.exports = {
                         successMessage += `**Duration:** ${durationText}\n\n`;
                         successMessage += `*The essence spreads around you, making you more attractive to wild Pals!*`;
                         
-                        // Consume multiple items but only apply the effect once (with extended duration if multiple)
                         if (quantity > 1) {
                             const totalDuration = duration * quantity;
                             player.effects[player.effects.length - 1].expiresAt = Date.now() + totalDuration;
@@ -217,7 +444,6 @@ module.exports = {
                         });
                 }
             } else {
-                // Handle items that need a pal
                 const palResult = await findPal(message, args, player, prefix);
                 if (palResult.error) {
                     return message.reply({ embeds: [palResult.error] });
@@ -225,11 +451,12 @@ module.exports = {
                 
                 const pal = palResult.pal;
                 
+                // Clean expired effects every time we access the pal
+                cleanExpiredPotionEffects(pal);
+                
                 switch (effect.type) {
                     case 'heal':
-                        if (pal.currentHp === null) {
-                            pal.currentHp = pal.stats.hp; // Initialize if null
-                        }
+                        if (pal.currentHp === null) pal.currentHp = pal.stats.hp;
                         
                         if (pal.currentHp >= pal.stats.hp) {
                             return message.reply({ 
@@ -276,15 +503,13 @@ module.exports = {
                             });
                         }
                         
-                        // Build success message
                         successMessage = `You used ${CommandHelpers.getItemEmoji(itemData.name)} **${quantity}x ${itemData.name}** on **${pal.nickname}**!\n\n`;
                         
                         if (result.evolved) {
                             successMessage += `✨ **Evolution!** ${result.evolutionInfo.oldName} evolved into **${result.evolutionInfo.newName}**!\n`;
                             successMessage += `**Current Level:** ${pal.level}\n`;
                             
-                            // Calculate remaining potions used after evolution
-                            const remainingPotions = quantity - (levelBefore - 1); // -1 because evolution happens at specific level
+                            const remainingPotions = quantity - (levelBefore - 1);
                             if (remainingPotions > 0) {
                                 successMessage += `**Additional Levels from Remaining Potions:** ${pal.level - 1}\n`;
                             }
@@ -302,7 +527,6 @@ module.exports = {
                             successMessage += `\n\n✨ **${pal.nickname}** has reached maximum level!`;
                         }
                         
-                        // Send single consolidated message instead of spam
                         if (result.skillPointsGained > 0) {
                             const skillPointEmbed = createInfoEmbed(
                                 `🌟 Skill Points Gained!`,
@@ -318,6 +542,149 @@ module.exports = {
                             );
                             await message.channel.send({ embeds: [evolutionEmbed] });
                         }
+                        break;
+                    
+                    case 'stat_boost':
+                    case 'multi_boost':
+                    case 'resistance':
+                    case 'trade_boost':
+                    case 'familiar_type_boost':
+                    case 'special':
+                    case 'multi_element':
+                        // Check for potion conflicts
+                        const conflictCheck = checkPotionConflicts(pal, itemId, effect.type);
+                        
+                        if (!conflictCheck.canUse) {
+                            if (conflictCheck.requiresConfirmation) {
+                                const confirmRow = new ActionRowBuilder().addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId(`confirm_potion_replace_${pal.petId}`)
+                                        .setLabel('Yes, Replace')
+                                        .setStyle(ButtonStyle.Danger)
+                                        .setEmoji('✅'),
+                                    new ButtonBuilder()
+                                        .setCustomId(`cancel_potion_replace_${pal.petId}`)
+                                        .setLabel('Cancel')
+                                        .setStyle(ButtonStyle.Secondary)
+                                        .setEmoji('❌')
+                                );
+                                
+                                const confirmEmbed = createWarningEmbed(
+                                    'Replace Existing Ability?',
+                                    conflictCheck.message
+                                );
+                                
+                                const confirmMsg = await message.reply({ 
+                                    embeds: [confirmEmbed], 
+                                    components: [confirmRow]
+                                });
+                                
+                                const filter = (i) => i.user.id === message.author.id && i.message.id === confirmMsg.id;
+                                const collector = confirmMsg.createMessageComponentCollector({ 
+                                    filter, 
+                                    time: 30000, 
+                                    max: 1 
+                                });
+                                
+                                collector.on('collect', async (interaction) => {
+                                    if (interaction.customId === `cancel_potion_replace_${pal.petId}`) {
+                                        await interaction.update({ 
+                                            embeds: [createInfoEmbed('Cancelled', 'Potion use cancelled.')],
+                                            components: []
+                                        });
+                                        return;
+                                    }
+                                    
+                                    // User confirmed, apply the potion
+                                    addPotionEffectToPal(pal, itemId, itemData);
+                                    
+                                    let effectDesc = '';
+                                    if (effect.stats) {
+                                        const statChanges = Object.entries(effect.stats)
+                                            .map(([stat, value]) => `+${value} ${stat.toUpperCase()}`)
+                                            .join(', ');
+                                        effectDesc = `**Stat Boost:** ${statChanges}\n`;
+                                    }
+                                    if (effect.ability) {
+                                        effectDesc += `**Ability:** ${effect.ability.replace(/_/g, ' ')}\n`;
+                                    }
+                                    if (effect.element) {
+                                        effectDesc += `**Resistance:** ${effect.element} (${effect.value}%)\n`;
+                                    }
+                                    
+                                    const finalMessage = `💉 Applied **${itemData.name}** to **${pal.nickname}**!\n\n${effectDesc}**Duration:** ${formatDuration(effect.duration)}\n\n✨ *${pal.nickname}'s abilities have been enhanced!*`;
+                                    
+                                    // Remove item from inventory (handled inside interaction because we return below)
+                                    itemInInventory.quantity -= quantity;
+                                    if (itemInInventory.quantity <= 0) {
+                                        player.inventory = player.inventory.filter(i => i.itemId !== itemId);
+                                    }
+                                    
+                                    await pal.save();
+                                    await player.save();
+                                    
+                                    await interaction.update({ 
+                                        embeds: [createSuccessEmbed('Potion Replaced!', finalMessage)],
+                                        components: []
+                                    });
+                                });
+                                
+                                collector.on('end', (collected) => {
+                                    if (collected.size === 0) {
+                                        confirmMsg.edit({ 
+                                            embeds: [createInfoEmbed('Timed Out', 'Potion use confirmation timed out.')],
+                                            components: []
+                                        }).catch(() => {});
+                                    }
+                                });
+                                
+                                // IMPORTANT: Return here to stop the main function from continuing to standard success message/save
+                                return; 
+                            } else {
+                                // Can't use (direct conflict like same potion active)
+                                return message.reply({ 
+                                    embeds: [createWarningEmbed('Cannot Use Potion', conflictCheck.error)] 
+                                });
+                            }
+                        }
+                        
+                        // No conflicts, apply directly
+                        addPotionEffectToPal(pal, itemId, itemData);
+                        
+                        let effectDescription = '';
+                        if (effect.stats) {
+                            const statChanges = Object.entries(effect.stats)
+                                .map(([stat, value]) => `+${value} ${stat.toUpperCase()}`)
+                                .join(', ');
+                            effectDescription = `**Stat Boost:** ${statChanges}\n`;
+                        }
+                        if (effect.gain) {
+                            const gains = Object.entries(effect.gain)
+                                .map(([stat, value]) => `+${value} ${stat.toUpperCase()}`)
+                                .join(', ');
+                            effectDescription += `**Gain:** ${gains}\n`;
+                        }
+                        if (effect.lose) {
+                            const losses = Object.entries(effect.lose)
+                                .map(([stat, value]) => `-${value} ${stat.toUpperCase()}`)
+                                .join(', ');
+                            effectDescription += `**Trade-off:** ${losses}\n`;
+                        }
+                        if (effect.ability) {
+                            effectDescription += `**Ability:** ${effect.ability.replace(/_/g, ' ')}\n`;
+                        }
+                        if (effect.element) {
+                            effectDescription += `**Resistance:** ${effect.element} (${effect.value}%)\n`;
+                        }
+                        if (effect.elements) {
+                            effectDescription += `**Elements:** ${effect.elements.join(', ')}\n`;
+                            effectDescription += `**Damage Boost:** +${effect.damage_boost}%\n`;
+                        }
+                        
+                        successMessage = `💉 **${pal.nickname}** consumed **${itemData.name}**!\n\n`;
+                        successMessage += effectDescription;
+                        successMessage += `**Duration:** ${formatDuration(effect.duration)}\n\n`;
+                        successMessage += `✨ *${pal.nickname}'s abilities have been enhanced!*`;
                         
                         break;
                     
@@ -330,7 +697,7 @@ module.exports = {
                 await pal.save();
             }
 
-            // Remove items from inventory
+            // Standard success path (skipped if confirmation interaction was triggered)
             itemInInventory.quantity -= quantity;
             if (itemInInventory.quantity <= 0) {
                 player.inventory = player.inventory.filter(i => i.itemId !== itemId);
@@ -338,7 +705,6 @@ module.exports = {
 
             await player.save();
 
-            // Create appropriate embed based on item type
             const embedTitle = itemData.type === 'lure' || itemData.type === 'essence' 
                 ? 'Essence Activated!' 
                 : 'Item Used Successfully!';

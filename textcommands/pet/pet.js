@@ -11,6 +11,78 @@ const LabManager = require('../../utils/labManager');
 
 const PALS_PER_PAGE = 10;
 
+// Import the cleanup function from use.js (or define it here)
+function cleanExpiredPotionEffects(pal) {
+    if (!pal.potionEffects || pal.potionEffects.length === 0) return false;
+    
+    const now = Date.now();
+    const expiredEffects = pal.potionEffects.filter(effect => effect.expiresAt && effect.expiresAt < now);
+    
+    if (expiredEffects.length === 0) return false;
+    
+    // Revert stats from expired effects
+    expiredEffects.forEach(effect => {
+        switch (effect.type) {
+            case 'stat_boost':
+            case 'multi_boost':
+                if (effect.stats) {
+                    Object.entries(effect.stats).forEach(([stat, value]) => {
+                        if (pal.stats[stat] !== undefined) {
+                            pal.stats[stat] = Math.max(stat === 'hp' ? 1 : 0, pal.stats[stat] - value);
+                        }
+                    });
+                }
+                break;
+                
+            case 'trade_boost':
+                if (effect.gain) {
+                    Object.entries(effect.gain).forEach(([stat, value]) => {
+                        if (pal.stats[stat] !== undefined) {
+                            pal.stats[stat] = Math.max(stat === 'hp' ? 1 : 0, pal.stats[stat] - value);
+                        }
+                    });
+                }
+                if (effect.lose) {
+                    Object.entries(effect.lose).forEach(([stat, value]) => {
+                        if (pal.stats[stat] !== undefined) {
+                            pal.stats[stat] += value;
+                        }
+                    });
+                }
+                break;
+                
+            case 'familiar_type_boost':
+                const palData = GameData.getPet(pal.basePetId);
+                const palType = palData?.type || "Beast";
+                
+                if (effect.target && palType.toLowerCase() === effect.target.toLowerCase()) {
+                    if (effect.stats) {
+                        Object.entries(effect.stats).forEach(([stat, value]) => {
+                            if (pal.stats[stat] !== undefined) {
+                                pal.stats[stat] = Math.max(stat === 'hp' ? 1 : 0, pal.stats[stat] - value);
+                            }
+                        });
+                    }
+                }
+                break;
+                
+            case 'special':
+                if (effect.bonus_luck) {
+                    pal.stats.luck = Math.max(0, pal.stats.luck - effect.bonus_luck);
+                }
+                if (effect.crit_bonus) {
+                    pal.stats.luck = Math.max(0, pal.stats.luck - effect.crit_bonus);
+                }
+                break;
+        }
+    });
+    
+    // Remove expired effects from array
+    pal.potionEffects = pal.potionEffects.filter(effect => !effect.expiresAt || effect.expiresAt >= now);
+    
+    return expiredEffects.length > 0;
+}
+
 // Helper function for the detailed Pal view embed
 const generatePalDetailEmbed = (pal, member) => {
     const basePalInfo = GameData.getPet(pal.basePetId);
@@ -21,21 +93,134 @@ const generatePalDetailEmbed = (pal, member) => {
     const emptyBlocks = 10 - filledBlocks;
     const progressBar = '▓'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
 
+    // Calculate base stats (without potion boosts)
+    const baseStats = { ...pal.stats };
+    const potionBoosts = { hp: 0, atk: 0, def: 0, spd: 0, luck: 0 };
+    
+    // Calculate potion boosts by reverting applied effects
+    if (pal.potionEffects && pal.potionEffects.length > 0) {
+        const now = Date.now();
+        pal.potionEffects.forEach(effect => {
+            if (effect.expiresAt && effect.expiresAt < now) return; // Skip expired
+            
+            switch (effect.type) {
+                case 'stat_boost':
+                case 'multi_boost':
+                    if (effect.stats) {
+                        Object.entries(effect.stats).forEach(([stat, value]) => {
+                            if (potionBoosts[stat] !== undefined) {
+                                potionBoosts[stat] += value;
+                            }
+                        });
+                    }
+                    break;
+                    
+                case 'trade_boost':
+                    if (effect.gain) {
+                        Object.entries(effect.gain).forEach(([stat, value]) => {
+                            if (potionBoosts[stat] !== undefined) {
+                                potionBoosts[stat] += value;
+                            }
+                        });
+                    }
+                    if (effect.lose) {
+                        Object.entries(effect.lose).forEach(([stat, value]) => {
+                            if (potionBoosts[stat] !== undefined) {
+                                potionBoosts[stat] -= value;
+                            }
+                        });
+                    }
+                    break;
+                    
+                case 'familiar_type_boost':
+                    const palType = basePalInfo?.type || "Beast";
+                    if (effect.target && palType.toLowerCase() === effect.target.toLowerCase()) {
+                        if (effect.stats) {
+                            Object.entries(effect.stats).forEach(([stat, value]) => {
+                                if (potionBoosts[stat] !== undefined) {
+                                    potionBoosts[stat] += value;
+                                }
+                            });
+                        }
+                    }
+                    break;
+                    
+                case 'special':
+                    if (effect.bonus_luck) {
+                        potionBoosts.luck += effect.bonus_luck;
+                    }
+                    if (effect.crit_bonus) {
+                        potionBoosts.luck += effect.crit_bonus;
+                    }
+                    break;
+            }
+        });
+    }
+
+    // Format stat display with boosts
+    const formatStat = (current, boost) => {
+        if (boost > 0) {
+            return `\`${current}\` \`(+${boost})\``;
+        } else if (boost < 0) {
+            return `\`${current}\` \`(${boost})\``;
+        }
+        return `\`${current}\``;
+    };
+
+    const fields = [
+        { name: '❤️ HP', value: formatStat(pal.currentHp || pal.stats.hp, potionBoosts.hp), inline: true },
+        { name: '⚔️ ATK', value: formatStat(pal.stats.atk, potionBoosts.atk), inline: true },
+        { name: '🛡️ DEF', value: formatStat(pal.stats.def, potionBoosts.def), inline: true },
+        { name: '💨 SPD', value: formatStat(pal.stats.spd, potionBoosts.spd), inline: true },
+        { name: '🍀 LUCK', value: formatStat(pal.stats.luck, potionBoosts.luck), inline: true },
+    ];
+
+    // Add active potions field if there are any
+    if (pal.potionEffects && pal.potionEffects.length > 0) {
+        const now = Date.now();
+        const activeEffects = pal.potionEffects.filter(e => !e.expiresAt || e.expiresAt > now);
+        
+        if (activeEffects.length > 0) {
+            const formatDuration = (ms) => {
+                const minutes = Math.floor(ms / (1000 * 60));
+                const hours = Math.floor(minutes / 60);
+                if (hours > 0) {
+                    const remainingMinutes = minutes % 60;
+                    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+                }
+                return `${minutes}m`;
+            };
+            
+            const potionList = activeEffects.map(effect => {
+                const timeLeft = formatDuration(effect.expiresAt - now);
+                return `\`${effect.source} (${timeLeft})\``;
+            }).join('\n');
+            
+            fields.push({ name: '🧪 Active Potions', value: potionList, inline: false });
+        }
+    }
+
+    const abilityEffect = pal.potionEffects.find(effect => effect.ability);
+    let ability;
+
+    if (abilityEffect) {
+        // Replaces underscores with spaces and Capitalizes Words
+        ability = abilityEffect.ability
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, l => l.toUpperCase()); 
+    } else {
+        ability = null;
+    }
+    const footer = ability ? `Status: ${pal.status} | Ability: ${ability}` : `Status: ${pal.status}`;
+
     return createCustomEmbed(
         `${pal.nickname} (Lvl. ${pal.level} ${basePalInfo.name})`,
         `**XP:** \`${pal.xp} / ${xpForNextLevel}\`\n\`${progressBar}\` (${progressPercentage}%)`,
         '#3498DB',
         {
-            fields: [
-                { name: '❤️ HP', value: `\`${pal.currentHp || pal.stats.hp}/${pal.stats.hp}\``, inline: true },
-                { name: '⚔️ ATK', value: `\`${pal.stats.atk}\``, inline: true },
-                { name: '🛡️ DEF', value: `\`${pal.stats.def}\``, inline: true },
-                { name: '💨 SPD', value: `\`${pal.stats.spd}\``, inline: true },
-                { name: '🍀 LUCK', value: `\`${pal.stats.luck}\``, inline: true },
-                { name: 'Status', value: `\`${pal.status}\``, inline: true },
-            ],
+            fields: fields,
             timestamp: false,
-            footer: { text: `Id: ${pal.petId}`}
+            footer: { text: footer }
         }
     );
 };
@@ -55,6 +240,11 @@ module.exports = {
                     return message.reply({ embeds: [petResult.embed] });
                 }
                 let pal = petResult.pet;
+
+                if (cleanExpiredPotionEffects(pal)) {
+                    await pal.save();
+                }
+
                 const { effects: ownerLabEffects } = await LabManager.getLabData(pal.ownerId);
                 pal = await restorePetHp(pal, ownerLabEffects);
                 // Fetch the owner's member object to display their avatar

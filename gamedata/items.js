@@ -216,10 +216,10 @@ module.exports = {
         name: 'Elixir of Strength',
         type: 'potion',
         rarity: 'Uncommon',
-        description: 'Temporarily boosts a familiar\'s ATK by 10 for one dungeon.',
+        description: 'Temporarily boosts a familiar\'s ATK for 30 minutes',
         source: 'brewing',
-        effect: { type: 'stat_boost', stats: { atk: 10 }, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'stat_boost', stats: { atk: 35 }, duration: 30 * 60 * 1000 },
+        usable: true
     },
     'mana_draught': {
         name: 'Mana Draught',
@@ -227,18 +227,18 @@ module.exports = {
         rarity: 'Uncommon',
         description: 'A concentrated tonic that sharpens reactions for a short time.',
         source: 'brewing',
-        effect: { type: 'stat_boost', stats: { spd: 5 }, duration: '1_battle' },
-        usable: false
+        effect: { type: 'stat_boost', stats: { spd: 35 }, duration: 30 * 60 * 1000 },
+        usable: true
     },
 
     'elixir_of_focus': {
         name: 'Elixir of Focus',
         type: 'potion',
         rarity: 'Uncommon',
-        description: 'Sharpens a familiar\'s senses, boosting accuracy and crit chance.',
+        description: 'Sharpens a familiar\'s senses, boosting atk and def.',
         source: 'brewing',
-        effect: { type: 'stat_boost', stats: { crit: 15 }, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'multi_boost', stats: { atk: 30, def: 10 }, duration: 30 * 60 * 1000 },
+        usable: true
     },
     'shadow_draught': {
         name: 'Shadow Draught',
@@ -246,17 +246,17 @@ module.exports = {
         rarity: 'Epic',
         description: 'A forbidden potion that lets your familiar strike from the shadows.',
         source: 'brewing',
-        effect: { type: 'special', ability: 'shadow_strike', duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'special', ability: 'shadow_strike', chance: 0.25, duration: 2 * 60 * 60 * 1000 },
+        usable: true
     },
     'storm_elixir': {
         name: 'Storm Elixir',
         type: 'potion',
         rarity: 'Rare',
-        description: 'Channels the power of thunder, dramatically boosting speed and critical chance.',
+        description: 'Channels the power of thunder, dramatically boosting speed and atk.',
         source: 'brewing',
-        effect: { type: 'multi_boost', stats: { spd: 15, crit: 20 }, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'multi_boost', stats: { spd: 55, atk: 30 }, duration: 60 * 60 * 1000 },
+        usable: true
     },
     'void_tonic': {
         name: 'Void Tonic',
@@ -264,8 +264,8 @@ module.exports = {
         rarity: 'Epic',
         description: 'A dangerous brew that grants the ability to phase through attacks.',
         source: 'brewing',
-        effect: { type: 'special', ability: 'phase_dodge', chance: 0.25, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'special', ability: 'phase_dodge', chance: 0.25, duration: 2 * 60 * 60 * 1000 },
+        usable: true
     },
     'celestial_elixir': {
         name: 'Celestial Elixir',
@@ -273,8 +273,8 @@ module.exports = {
         rarity: 'Legendary',
         description: 'A divine potion that temporarily grants heavenly protection and power.',
         source: 'brewing',
-        effect: { type: 'multi_boost', stats: { hp: 100, atk: 25, def: 25, luck: 15 }, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'multi_boost', stats: { hp: 100, atk: 75, def: 55, luck: 15 }, duration: 3 * 60 * 60 * 1000 },
+        usable: true
     },
     'level_potion': {
         name: 'Level Potion',
@@ -291,8 +291,8 @@ module.exports = {
         rarity: 'Uncommon',
         description: 'A chilling brew that protects against frost and ice attacks.',
         source: 'brewing',
-        effect: { type: 'resistance', element: 'ice', value: 50, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'resistance', element: 'ice', value: 50, duration: 30 * 60 * 1000 },
+        usable: true
     },
     'fire_resistance_draught': {
         name: 'Fire Resistance Draught',
@@ -300,8 +300,8 @@ module.exports = {
         rarity: 'Uncommon',
         description: 'A cooling potion that shields the drinker from fire and heat.',
         source: 'brewing',
-        effect: { type: 'resistance', element: 'fire', value: 50, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'resistance', element: 'fire', value: 50, duration: 30 * 60 * 1000 },
+        usable: true
     },
     'berserker_elixir': {
         name: 'Berserker Elixir',
@@ -309,8 +309,8 @@ module.exports = {
         rarity: 'Rare',
         description: 'A dangerous potion that trades defense for overwhelming attack power.',
         source: 'brewing',
-        effect: { type: 'trade_boost', gain: { atk: 30 }, lose: { def: 15 }, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'trade_boost', gain: { atk: 80 }, lose: { def: 55 }, duration: 60 * 60 * 1000 },
+        usable: true
     },
     'spirit_communion_brew': {
         name: 'Spirit Communion Brew',
@@ -318,8 +318,8 @@ module.exports = {
         rarity: 'Epic',
         description: 'Allows the drinker to commune with spirits, gaining supernatural insight.',
         source: 'brewing',
-        effect: { type: 'special', ability: 'see_hidden', bonus_luck: 25, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'special', ability: 'see_hidden', bonus_luck: 25, duration: 2 * 60 * 60 * 1000 },
+        usable: true
     },
     'mechanical_oil': {
         name: 'Mechanical Oil',
@@ -327,8 +327,8 @@ module.exports = {
         rarity: 'Uncommon',
         description: 'A specialized lubricant that enhances the performance of mechanical familiars.',
         source: 'brewing',
-        effect: { type: 'familiar_type_boost', target: 'mechanical', stats: { spd: 15, accuracy: 10 }, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'familiar_type_boost', target: 'mechanical', stats: { spd: 45, def: 20 }, duration: 30 * 60 * 1000 },
+        usable: true
     },
     'nightmare_draught': {
         name: 'Nightmare Draught',
@@ -336,8 +336,8 @@ module.exports = {
         rarity: 'Legendary',
         description: 'A terrifying concoction that grants the ability to inflict fear upon enemies.',
         source: 'brewing',
-        effect: { type: 'special', ability: 'fear_strike', chance: 0.30, duration: '1_dungeon' },
-        usable: false
+        effect: { type: 'special', ability: 'fear_strike', chance: 0.30, duration: 3 * 60 * 60 * 1000 },
+        usable: true
     },
     'essence_fusion_elixir': {
         name: 'Essence Fusion Elixir',
@@ -345,7 +345,7 @@ module.exports = {
         rarity: 'Epic',
         description: 'A complex brew that temporarily combines multiple elemental powers.',
         source: 'brewing',
-        effect: { type: 'multi_element', elements: ['fire', 'ice', 'storm'], damage_boost: 20, duration: '1_dungeon' },
+        effect: { type: 'multi_element', elements: ['fire', 'ice', 'storm'], damage_boost: 20, duration: 2 * 60 * 60 * 1000 },
         usable: false
     },
     'crystal_clarity_potion': {
@@ -354,7 +354,7 @@ module.exports = {
         rarity: 'Rare',
         description: 'A clear potion that sharpens perception and reveals weaknesses.',
         source: 'brewing',
-        effect: { type: 'special', ability: 'weakness_detection', crit_bonus: 25, duration: '1_battle' },
+        effect: { type: 'special', ability: 'weakness_detection', bonus_luck: 25, duration: 60 * 60 * 1000 },
         usable: false
     },
 
