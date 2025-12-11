@@ -8,11 +8,10 @@ module.exports = {
     async execute(interaction, client) {
         try {
             // Calculate the bot's latency
-            const botLatency = Date.now() - interaction.createdTimestamp;
             const apiLatency = Math.round(client.ws.ping);
             
             await interaction.reply({
-                content: `🏓 Pong!\n**Bot Latency:** ${botLatency}ms\n**API Latency:** ${apiLatency}ms`,
+                content: `🏓 Pong!\n**Latency:** ${apiLatency}ms`,
                 ephemeral: false
             });
         } catch (error) {

@@ -73,6 +73,4 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-console.log('Bot is starting...');
-console.log(`Logged in as ${client.user ? client.user.tag : 'unknown user'}`);
 module.exports = client;
