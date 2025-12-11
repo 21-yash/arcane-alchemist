@@ -333,13 +333,6 @@ class SkillManager {
         }
 
         modifiedCreature.stats = StatManager.validateStats(modifiedCreature.stats);
-        console.log('\n=== BEAST ENHANCED STATS ===');
-        console.log('Name:', modifiedCreature.nickname || modifiedCreature.name);
-        console.log('Battle Type:', battleType);
-        console.log('Beast Count:', context.beastCount || 1);
-        console.log('\nSkill Bonuses:', modifiedCreature.skillBonuses);
-        console.log('\nFinal Stats:', modifiedCreature.stats);
-        console.log('===========================\n');
         return modifiedCreature;
     }
 
