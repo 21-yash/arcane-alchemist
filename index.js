@@ -53,7 +53,7 @@ require('./handlers/commandHandler')(client);
 require('./handlers/errorHandler')(client);
 initializeGameEventListeners(client);
 require('./utils/questScheduler');
-// require('./webhookListener').startWebhookListener(client);
+require('./webhookListener').startWebhookListener(client);
 // Connect to MongoDB
 require('./config/database');
 
