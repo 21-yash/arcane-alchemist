@@ -73,5 +73,5 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-
+console.log('Bot is starting...');
 module.exports = client;
