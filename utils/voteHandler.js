@@ -65,7 +65,7 @@ async function handleVoteReward(userId, client) {
 
         const user = await client.users.fetch(userId).catch(() => null);
         if (user) {
-            const embed = createCustomEmbed('🗳️ Thank You For Voting!', rewardMessage);
+            const embed = createCustomEmbed('🗳️ Thank You For Voting!', rewardMessage, config.colors.success);
             user.send({ embeds: [embed] }).catch(() => {
                 console.log(`Could not DM user ${userId} about their vote reward.`);
             });
