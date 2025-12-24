@@ -65,6 +65,9 @@ const PlayerSchema = new mongoose.Schema({
     voteStreak: { type: Number, default: 0 },
     lastVotedAt: { type: Date, default: null },
 
+    // Badges - e.g. ['beta_user', 'top_voter', 'supporter']
+    badges: { type: [String], default: [] },
+
 }, { timestamps: true });
 
 module.exports = mongoose.model('Player', PlayerSchema);

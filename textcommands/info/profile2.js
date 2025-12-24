@@ -38,7 +38,9 @@ module.exports = {
     description: 'Displays your alchemist profile card.',
     async execute(message, args, client, prefix) {
         try {
-            const user = getMember(message, args[0]) || message.author;
+            // getMember returns GuildMember, we need the User object
+            const member = getMember(message, args[0]);
+            const user = member ? member.user : message.author;
             const player = await Player.findOne({ userId: user.id });
 
             if (!player) {
@@ -90,9 +92,42 @@ module.exports = {
             ctx.textAlign = 'left';
             ctx.fillText(user.username, 270, 140);
 
+            // Measure username width to position badges after it
+            const usernameWidth = ctx.measureText(user.username).width;
+
             ctx.fillStyle = '#AAAAAA';
             ctx.font = '24px Lato';
             ctx.fillText('Arcane Alchemist', 270, 175);
+
+            // --- Badges ---
+            // Position badges right after the username
+            const badgeSize = 50;
+            let badgeX = 270 + usernameWidth + 15; // 15px gap after username
+            const badgeY = 105; // Vertically centered with username (140 - badgeSize/2 - small offset)
+            
+            // Badge definitions
+            const badgeIcons = {
+                'beta_user': 'assets/icons/badge_beta_user.png'
+                // Add more badges here: 'top_voter': 'assets/icons/badge_top_voter.png', etc.
+            };
+
+            // Display user badges
+            if (player.badges && player.badges.length > 0) {
+                console.log(`[Profile2] Drawing badges for ${user.username}:`, player.badges);
+                for (const badge of player.badges) {
+                    if (badgeIcons[badge]) {
+                        try {
+                            const badgeIcon = await loadImage(path.join(process.cwd(), badgeIcons[badge]));
+                            ctx.drawImage(badgeIcon, badgeX, badgeY, badgeSize, badgeSize);
+                            badgeX += badgeSize + 10; // Space between badges
+                        } catch (err) {
+                            console.error(`Failed to load badge icon: ${badge}. Error: ${err.message}`);
+                        }
+                    } else {
+                        console.log(`[Profile2] Badge "${badge}" not found in badgeIcons`);
+                    }
+                }
+            }
 
             // --- Level Circle ---
             ctx.fillStyle = '#1a1a1a';
