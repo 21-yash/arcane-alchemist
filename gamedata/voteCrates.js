@@ -62,9 +62,8 @@ const crateTypes = {
 const lootTables = {
     common: {
         categoryWeights: {
-            ingredient: 50,      // 50% chance
-            crafting_material: 30, // 30% chance
-            potion: 12,          // 12% chance
+            ingredient: 55,      // 55% chance
+            crafting_material: 37, // 37% chance
             scroll: 5,           // 5% chance (recipes)
             equipment: 3         // 3% chance (weapons/armor)
         },
@@ -81,9 +80,8 @@ const lootTables = {
     },
     uncommon: {
         categoryWeights: {
-            ingredient: 40,
-            crafting_material: 32,
-            potion: 15,
+            ingredient: 47,
+            crafting_material: 40,
             scroll: 8,
             equipment: 5
         },
@@ -100,9 +98,8 @@ const lootTables = {
     },
     rare: {
         categoryWeights: {
-            ingredient: 30,
-            crafting_material: 30,
-            potion: 18,
+            ingredient: 39,
+            crafting_material: 39,
             scroll: 12,
             equipment: 10
         },
@@ -119,9 +116,8 @@ const lootTables = {
     },
     legendary: {
         categoryWeights: {
-            ingredient: 20,
-            crafting_material: 25,
-            potion: 20,
+            ingredient: 30,
+            crafting_material: 35,
             scroll: 18,
             equipment: 17
         },

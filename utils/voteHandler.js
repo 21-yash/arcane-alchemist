@@ -75,8 +75,7 @@ async function handleVoteReward(userId, client) {
         const embed = new EmbedBuilder()
             .setColor(crate.color)
             .setAuthor({ name: '🗳️ Thank You For Voting!', iconURL: client.user.displayAvatarURL() })
-            .setTitle(`${crate.emoji} ${crate.name} Opened!`)
-            .setDescription(crate.description);
+            .setTitle(`${crate.emoji} ${crate.name} Received!`)
 
         // Streak info
         let streakText = '';
@@ -92,28 +91,29 @@ async function handleVoteReward(userId, client) {
 
         embed.addFields({ name: '📊 Streak Status', value: streakText, inline: false });
 
-        // Items received
-        let itemsText = '';
-        for (const item of rewards.items) {
-            const emoji = config.emojis[item.name] || '📦';
-            const rarityEmoji = getRarityEmoji(item.rarity);
-            itemsText += `${emoji} **${item.name}** x${item.quantity} ${rarityEmoji}\n`;
-        }
+        // Items received + Currency in one field
+        let rewardsText = '';
         
-        if (rewards.scroll) {
-            const scrollEmoji = config.emojis.scroll || '📜';
-            itemsText += `${scrollEmoji} **${rewards.scroll.name}** ${getRarityEmoji(rewards.scroll.rarity)} *(NEW RECIPE!)*\n`;
-        }
-
-        if (itemsText) {
-            embed.addFields({ name: '🎁 Items Received', value: itemsText, inline: false });
-        }
-
-        // Currency
+        // Add currency first
         const goldEmoji = config.emojis.gold || '🪙';
         const dustEmoji = config.emojis.arcane_dust || '✨';
-        const currencyText = `${goldEmoji} **${rewards.gold.toLocaleString()}** Gold\n${dustEmoji} **${rewards.dust.toLocaleString()}** Arcane Dust`;
-        embed.addFields({ name: '💰 Currency', value: currencyText, inline: true });
+        rewardsText += `${goldEmoji} **${rewards.gold.toLocaleString()}** Gold\n`;
+        rewardsText += `${dustEmoji} **${rewards.dust.toLocaleString()}** Arcane Dust\n\n`;
+        
+        // Add items
+        for (const item of rewards.items) {
+            const emoji = config.emojis[item.name] || '�';
+            const rarityEmoji = getRarityEmoji(item.rarity);
+            rewardsText += `${emoji} **${item.name}** x${item.quantity} ${rarityEmoji}\n`;
+        }
+        
+        // Add scroll if obtained
+        if (rewards.scroll) {
+            const scrollEmoji = config.emojis.scroll || '📜';
+            rewardsText += `${scrollEmoji} **${rewards.scroll.name}** ${getRarityEmoji(rewards.scroll.rarity)} *(NEW!)*\n`;
+        }
+
+        embed.addFields({ name: '🎁 Rewards', value: rewardsText.trim(), inline: false });
 
         // Buff info
         embed.addFields({ 
