@@ -137,8 +137,56 @@ async function handleVoteReward(userId, client) {
             });
         }
 
+        // --- Log Vote to Channel ---
+        await logVote(client, user, player, crate, rewards, weekend);
+
     } catch (error) {
         console.error(`Error handling vote reward for ${userId}:`, error);
+    }
+}
+
+/**
+ * Log vote to the designated vote log channel
+ */
+async function logVote(client, user, player, crate, rewards, isWeekend) {
+    try {
+        if (!config.voteLogChannelId) return;
+        
+        const logChannel = await client.channels.fetch(config.voteLogChannelId).catch(() => null);
+        if (!logChannel) return;
+
+        const goldEmoji = config.emojis.gold || '🪙';
+        const dustEmoji = config.emojis.arcane_dust || '✨';
+
+        // Build compact rewards list
+        let rewardsList = `${goldEmoji} ${rewards.gold} | ${dustEmoji} ${rewards.dust}`;
+        
+        if (rewards.items.length > 0) {
+            const itemNames = rewards.items.map(i => `${i.name} x${i.quantity}`).join(', ');
+            rewardsList += `\n📦 ${itemNames}`;
+        }
+        
+        if (rewards.scroll) {
+            rewardsList += `\n📜 ${rewards.scroll.name}`;
+        }
+
+        const logEmbed = new EmbedBuilder()
+            .setColor(crate.color)
+            .setAuthor({ 
+                name: `${user?.tag || 'Unknown User'} voted!`, 
+                iconURL: user?.displayAvatarURL() || client.user.displayAvatarURL() 
+            })
+            .setDescription(`${crate.emoji} **${crate.name}**${isWeekend ? ' 🎉 (2x Weekend)' : ''}`)
+            .addFields(
+                { name: '🔥 Streak', value: `${player.voteStreak} days`, inline: true },
+                { name: '🎁 Rewards', value: rewardsList, inline: false }
+            )
+            .setFooter({ text: `User ID: ${player.userId}` })
+            .setTimestamp();
+
+        await logChannel.send({ embeds: [logEmbed] });
+    } catch (error) {
+        console.error('Error logging vote:', error);
     }
 }
 

@@ -2,6 +2,7 @@
     "prefix": ",",
     "ownerId": "528933845928771594",
     "logChannelId": "960596189621940318",
+    "voteLogChannelId": "960596189621940319",
     "colors": {
         "success": "#00ff00",
         "error": "#ff0000",
