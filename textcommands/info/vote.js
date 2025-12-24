@@ -11,6 +11,7 @@ module.exports = {
     async execute(message, args, client, prefix) {
         
         let voteStatus = 'You can vote now!';
+        let currentStreak = 0;
         try {
             const player = await Player.findOne({ userId: message.author.id });
             if (player && player.lastVotedAt) {
@@ -20,6 +21,7 @@ module.exports = {
                 if (Date.now() < nextVoteTime) {
                     voteStatus = `<t:${Math.floor(nextVoteTime / 1000)}:R>`;
                 }
+                currentStreak = player.voteStreak || 0;
             }
         } catch (error) {
             console.error('Error fetching vote status:', error);
@@ -28,7 +30,7 @@ module.exports = {
         const embed = new EmbedBuilder()
             .setColor(config.colors.primary)
             .setTitle(`✨ Support ${client.user.username}!`)
-            .setDescription(`Voting helps us grow and reach more users. You can vote every 12 hours!\n\n**Vote Status:** ${voteStatus}`)
+            .setDescription(`Voting helps us grow and reach more users. You can vote every 12 hours!\n\n**Vote Status:** ${voteStatus}\n**Current Streak:** ${currentStreak}`)
             .setThumbnail(client.user.displayAvatarURL({ dynamic: true, size: 4096 }))
             .addFields([
                 { name: '🏆 Top.gg', value: '[Vote Here](https://top.gg/bot/849583244868321300/vote)', inline: true }

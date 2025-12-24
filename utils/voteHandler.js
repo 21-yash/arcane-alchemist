@@ -1,6 +1,7 @@
 const Player = require('../models/Player');
-const { createCustomEmbed } = require('./embed');
+const { EmbedBuilder } = require('discord.js');
 const config = require('../config/config.json');
+const { getCrateType, openCrate, isWeekend, crateTypes } = require('../gamedata/voteCrates');
 
 async function handleVoteReward(userId, client) {
     try {
@@ -11,8 +12,7 @@ async function handleVoteReward(userId, client) {
         }
 
         const now = new Date();
-        const baseGoldReward = 500;
-        const baseDustReward = 50;
+        const weekend = isWeekend();
 
         // --- Vote Streak Logic ---
         let isStreak = false;
@@ -31,14 +31,29 @@ async function handleVoteReward(userId, client) {
 
         player.lastVotedAt = now;
 
-        // --- Calculate Rewards ---
-        // Increase rewards by 10% for each day in the streak, max of 100% bonus (10 days)
-        const streakBonus = Math.min(player.voteStreak - 1, 10) * 0.10;
-        const finalGold = Math.floor(baseGoldReward * (1 + streakBonus));
-        const finalDust = Math.floor(baseDustReward * (1 + streakBonus));
+        // --- Determine Crate Type & Open ---
+        const crateType = getCrateType(player.voteStreak);
+        const rewards = openCrate(crateType, weekend);
+        const crate = crateTypes[crateType];
 
-        player.gold += finalGold;
-        player.arcaneDust += finalDust;
+        // --- Apply Rewards ---
+        player.gold += rewards.gold;
+        player.arcaneDust += rewards.dust;
+
+        // Add items to inventory
+        for (const item of rewards.items) {
+            const existingItem = player.inventory.find(i => i.itemId === item.itemId);
+            if (existingItem) {
+                existingItem.quantity += item.quantity;
+            } else {
+                player.inventory.push({ itemId: item.itemId, quantity: item.quantity });
+            }
+        }
+
+        // Add recipe scroll to grimoire if obtained
+        if (rewards.scroll && !player.grimoire.includes(rewards.scroll.recipeId)) {
+            player.grimoire.push(rewards.scroll.recipeId);
+        }
 
         // --- Apply "Voter's Luck" Buff ---
         const buffDuration = 12 * 60 * 60 * 1000; // 12 hours in milliseconds
@@ -56,16 +71,73 @@ async function handleVoteReward(userId, client) {
 
         await player.save();
 
-        // --- Notify the Player ---
-        let rewardMessage = `You have been rewarded with **${finalGold} Gold** and **${finalDust} Arcane Dust**!`;
-        if (isStreak) {
-            rewardMessage += `\n\n🔥 You are on a **${player.voteStreak}-day** voting streak! Your rewards were increased by **${Math.floor(streakBonus * 100)}%**.`;
-        }
-        rewardMessage += `\n\nYou have also received the **Voter's Luck** buff for 12 hours, slightly increasing your chances of finding rare items and Pals!`;
+        // --- Build the Reward Embed ---
+        const embed = new EmbedBuilder()
+            .setColor(crate.color)
+            .setAuthor({ name: '🗳️ Thank You For Voting!', iconURL: client.user.displayAvatarURL() })
+            .setTitle(`${crate.emoji} ${crate.name} Opened!`)
+            .setDescription(crate.description);
 
+        // Streak info
+        let streakText = '';
+        if (isStreak) {
+            streakText = `🔥 **${player.voteStreak}-day** voting streak!`;
+        } else {
+            streakText = `Starting a new streak! Keep voting daily!`;
+        }
+        
+        if (weekend) {
+            streakText += `\n🎉 **WEEKEND BONUS:** Double rewards!`;
+        }
+
+        embed.addFields({ name: '📊 Streak Status', value: streakText, inline: false });
+
+        // Items received
+        let itemsText = '';
+        for (const item of rewards.items) {
+            const emoji = config.emojis[item.name] || '📦';
+            const rarityEmoji = getRarityEmoji(item.rarity);
+            itemsText += `${emoji} **${item.name}** x${item.quantity} ${rarityEmoji}\n`;
+        }
+        
+        if (rewards.scroll) {
+            const scrollEmoji = config.emojis.scroll || '📜';
+            itemsText += `${scrollEmoji} **${rewards.scroll.name}** ${getRarityEmoji(rewards.scroll.rarity)} *(NEW RECIPE!)*\n`;
+        }
+
+        if (itemsText) {
+            embed.addFields({ name: '🎁 Items Received', value: itemsText, inline: false });
+        }
+
+        // Currency
+        const goldEmoji = config.emojis.gold || '🪙';
+        const dustEmoji = config.emojis.arcane_dust || '✨';
+        const currencyText = `${goldEmoji} **${rewards.gold.toLocaleString()}** Gold\n${dustEmoji} **${rewards.dust.toLocaleString()}** Arcane Dust`;
+        embed.addFields({ name: '💰 Currency', value: currencyText, inline: true });
+
+        // Buff info
+        embed.addFields({ 
+            name: '🍀 Voter\'s Luck', 
+            value: `Active for **12 hours**\n+10% rare encounter chance!`, 
+            inline: true 
+        });
+
+        // Next crate preview
+        const streakToNext = getStreakToNextCrate(player.voteStreak);
+        if (streakToNext) {
+            embed.addFields({
+                name: '⏭️ Next Crate',
+                value: streakToNext,
+                inline: true
+            });
+        }
+
+        embed.setFooter({ text: 'Vote again in 12 hours to maintain your streak!' })
+            .setTimestamp();
+
+        // --- Notify the Player ---
         const user = await client.users.fetch(userId).catch(() => null);
         if (user) {
-            const embed = createCustomEmbed('🗳️ Thank You For Voting!', rewardMessage, config.colors.success);
             user.send({ embeds: [embed] }).catch(() => {
                 console.log(`Could not DM user ${userId} about their vote reward.`);
             });
@@ -74,6 +146,30 @@ async function handleVoteReward(userId, client) {
     } catch (error) {
         console.error(`Error handling vote reward for ${userId}:`, error);
     }
+}
+
+/**
+ * Get rarity emoji
+ */
+function getRarityEmoji(rarity) {
+    const rarityEmojis = {
+        'Common': '⚪',
+        'Uncommon': '🟢',
+        'Rare': '🔵',
+        'Epic': '🟣',
+        'Legendary': '🟡'
+    };
+    return rarityEmojis[rarity] || '⚪';
+}
+
+/**
+ * Get streak info for next crate upgrade
+ */
+function getStreakToNextCrate(currentStreak) {
+    if (currentStreak >= 40) return '🏆 You have the best crate!';
+    if (currentStreak >= 20) return `**${40 - currentStreak}** more votes to 🌟 Legendary Crate`;
+    if (currentStreak >= 10) return `**${20 - currentStreak}** more votes to 💎 Rare Crate`;
+    return `**${10 - currentStreak}** more votes to 🎁 Uncommon Crate`;
 }
 
 module.exports = { handleVoteReward };

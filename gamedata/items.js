@@ -8,6 +8,39 @@ module.exports = {
         effects: { type: 'pal_lure', duration: 12 * 60 * 60 * 1000, strength: 1.1 },
         usable: false
     },
+    // --- VOTE CRATES ---
+    'common_vote_crate': {
+        name: 'Common Vote Crate',
+        type: 'crate',
+        rarity: 'Common',
+        description: 'A simple crate containing basic rewards for your support!',
+        source: 'voting',
+        usable: false
+    },
+    'uncommon_vote_crate': {
+        name: 'Uncommon Vote Crate',
+        type: 'crate',
+        rarity: 'Uncommon',
+        description: 'A refined crate with better chances for valuable items!',
+        source: 'voting',
+        usable: false
+    },
+    'rare_vote_crate': {
+        name: 'Rare Vote Crate',
+        type: 'crate',
+        rarity: 'Rare',
+        description: 'A mystical crate brimming with powerful rewards!',
+        source: 'voting',
+        usable: false
+    },
+    'legendary_vote_crate': {
+        name: 'Legendary Vote Crate',
+        type: 'crate',
+        rarity: 'Legendary',
+        description: 'An extraordinary crate containing legendary treasures!',
+        source: 'voting',
+        usable: false
+    },
     // --- MISC (Crafting) ---
     'whispering_charm': {
         name: 'Whispering Charm',
