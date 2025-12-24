@@ -98,19 +98,18 @@ async function handleVoteReward(userId, client) {
         const goldEmoji = config.emojis.gold || '🪙';
         const dustEmoji = config.emojis.arcane_dust || '✨';
         rewardsText += `${goldEmoji} **${rewards.gold.toLocaleString()}** Gold\n`;
-        rewardsText += `${dustEmoji} **${rewards.dust.toLocaleString()}** Arcane Dust\n\n`;
+        rewardsText += `${dustEmoji} **${rewards.dust.toLocaleString()}** Arcane Dust\n`;
         
         // Add items
         for (const item of rewards.items) {
             const emoji = config.emojis[item.name] || '�';
-            const rarityEmoji = getRarityEmoji(item.rarity);
-            rewardsText += `${emoji} **${item.name}** x${item.quantity} ${rarityEmoji}\n`;
+            rewardsText += `${emoji} **${item.name}** x${item.quantity}\n`;
         }
         
         // Add scroll if obtained
         if (rewards.scroll) {
             const scrollEmoji = config.emojis.scroll || '📜';
-            rewardsText += `${scrollEmoji} **${rewards.scroll.name}** ${getRarityEmoji(rewards.scroll.rarity)} *(NEW!)*\n`;
+            rewardsText += `${scrollEmoji} **${rewards.scroll.name}** *(NEW!)*\n`;
         }
 
         embed.addFields({ name: '🎁 Rewards', value: rewardsText.trim(), inline: false });
@@ -125,15 +124,10 @@ async function handleVoteReward(userId, client) {
         // Next crate preview
         const streakToNext = getStreakToNextCrate(player.voteStreak);
         if (streakToNext) {
-            embed.addFields({
-                name: '⏭️ Next Crate',
-                value: streakToNext,
-                inline: true
-            });
-        }
+            embed.setFooter({ text: streakToNext })
+        } 
 
-        embed.setFooter({ text: 'Vote again in 12 hours to maintain your streak!' })
-            .setTimestamp();
+        embed.setTimestamp();
 
         // --- Notify the Player ---
         const user = await client.users.fetch(userId).catch(() => null);
@@ -146,20 +140,6 @@ async function handleVoteReward(userId, client) {
     } catch (error) {
         console.error(`Error handling vote reward for ${userId}:`, error);
     }
-}
-
-/**
- * Get rarity emoji
- */
-function getRarityEmoji(rarity) {
-    const rarityEmojis = {
-        'Common': '⚪',
-        'Uncommon': '🟢',
-        'Rare': '🔵',
-        'Epic': '🟣',
-        'Legendary': '🟡'
-    };
-    return rarityEmojis[rarity] || '⚪';
 }
 
 /**
