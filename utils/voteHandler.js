@@ -1,5 +1,5 @@
 const Player = require('../models/Player');
-const { createInfoEmbed } = require('./embed');
+const { createCustomEmbed } = require('./embed');
 const config = require('../config/config.json');
 
 async function handleVoteReward(userId, client) {
@@ -65,7 +65,7 @@ async function handleVoteReward(userId, client) {
 
         const user = await client.users.fetch(userId).catch(() => null);
         if (user) {
-            const embed = createInfoEmbed('🗳️ Thank You For Voting!', rewardMessage);
+            const embed = createCustomEmbed('🗳️ Thank You For Voting!', rewardMessage);
             user.send({ embeds: [embed] }).catch(() => {
                 console.log(`Could not DM user ${userId} about their vote reward.`);
             });
