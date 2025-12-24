@@ -89,7 +89,7 @@ async function handleVoteReward(userId, client) {
             streakText += `\n🎉 **WEEKEND BONUS:** Double rewards!`;
         }
 
-        embed.addFields({ name: '📊 Streak Status', value: streakText, inline: false });
+        embed.addFields({ name: 'Streak Status', value: streakText, inline: false });
 
         // Items received + Currency in one field
         let rewardsText = '';
@@ -112,12 +112,12 @@ async function handleVoteReward(userId, client) {
             rewardsText += `${scrollEmoji} **${rewards.scroll.name}** *(NEW!)*\n`;
         }
 
-        embed.addFields({ name: '🎁 Rewards', value: rewardsText.trim(), inline: false });
+        embed.addFields({ name: 'Rewards', value: rewardsText.trim(), inline: false });
 
         // Buff info
         embed.addFields({ 
-            name: '🍀 Voter\'s Luck', 
-            value: `Active for **12 hours**\n+10% rare encounter chance!`, 
+            name: 'Voter\'s Luck', 
+            value: `🍀 Active for **12 hours**\n+10% rare encounter chance!`, 
             inline: true 
         });
 
@@ -147,9 +147,9 @@ async function handleVoteReward(userId, client) {
  */
 function getStreakToNextCrate(currentStreak) {
     if (currentStreak >= 40) return '🏆 You have the best crate!';
-    if (currentStreak >= 20) return `**${40 - currentStreak}** more votes to 🌟 Legendary Crate`;
-    if (currentStreak >= 10) return `**${20 - currentStreak}** more votes to 💎 Rare Crate`;
-    return `**${10 - currentStreak}** more votes to 🎁 Uncommon Crate`;
+    if (currentStreak >= 20) return `${40 - currentStreak} more votes to 🌟 Legendary Crate`;
+    if (currentStreak >= 10) return `${20 - currentStreak} more votes to 💎 Rare Crate`;
+    return `${10 - currentStreak} more votes to 🎁 Uncommon Crate`;
 }
 
 module.exports = { handleVoteReward };
