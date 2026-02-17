@@ -3,6 +3,14 @@ const GameData = require('../../utils/gameData');
 const CommandHelpers = require('../../utils/commandHelpers');
 const path = require('path');
 
+const formatDuration = (dur) => {
+    if (typeof dur === 'string') return dur.replace(/_/g, ' ');
+    const totalMinutes = Math.round(dur / (60 * 1000));
+    if (totalMinutes < 60) return `${totalMinutes} minute${totalMinutes !== 1 ? 's' : ''}`;
+    const hours = Math.round(totalMinutes / 60);
+    return `${hours} hour${hours !== 1 ? 's' : ''}`;
+};
+
 module.exports = {
     name: 'iteminfo',
     description: 'View detailed information about an item.',
@@ -123,7 +131,7 @@ module.exports = {
                 }
                 
                 if (effect.duration) {
-                    description += `**Duration:** ${effect.duration.replace(/_/g, ' ')}\n`;
+                    description += `**Duration:** ${formatDuration(effect.duration)}\n`;
                 }
             }
 
@@ -139,10 +147,7 @@ module.exports = {
                     description += `**Strength:** ${effects.strength}x\n`;
                 }
                 if (effects.duration) {
-                    const duration = effects.duration;
-                    const hours = Math.floor(duration / (60 * 60 * 1000));
-                    const minutes = Math.floor((duration % (60 * 60 * 1000)) / (60 * 1000));
-                    description += `**Duration:** ${hours > 0 ? `${hours}h ` : ''}${minutes}m\n`;
+                    description += `**Duration:** ${formatDuration(effects.duration)}\n`;
                 }
             }
 

@@ -16,6 +16,7 @@ const {
     createInfoEmbed,
 } = require("../../utils/embed");
 const GameData = require("../../utils/gameData");
+const CommandHelpers = require("../../utils/commandHelpers");
 const {
     CombatEngine,
     SkillManager,
@@ -24,6 +25,97 @@ const {
     COMBAT_CONFIG
 } = require("../../utils/combat");
 const { StatusEffectManager } = require("../../utils/statusEffects");
+
+// ─── Visual Helpers ───────────────────────────────────────────────
+function createHpBar(current, max, length = 10) {
+    const ratio = Math.max(0, Math.min(1, current / max));
+    const filled = Math.round(ratio * length);
+    const empty = length - filled;
+    return '▰'.repeat(filled) + '▱'.repeat(empty);
+}
+
+function getHpPercent(current, max) {
+    return Math.max(0, Math.round((current / max) * 100));
+}
+
+function getPalEmoji(basePetId) {
+    if (!basePetId) return '❓';
+    return CommandHelpers.getPalEmoji(basePetId) || '❓';
+}
+
+function parseTurnsFromLog(logText) {
+    if (!logText) return { preBattle: '', turns: [] };
+    const turnRegex = /\n?\*\*--- Turn (\d+) ---\*\*/g;
+    const parts = logText.split(turnRegex);
+    const preBattle = (parts[0] || '').trim();
+    const turns = [];
+    for (let i = 1; i < parts.length; i += 2) {
+        const turnNumber = parseInt(parts[i]);
+        const content = (parts[i + 1] || '').trim();
+        const hpRegex = /💚 \*\*(.+?):\*\* (\d+)\/(\d+) HP \| \*\*(.+?):\*\* (\d+)\/(\d+) HP/;
+        const hpMatch = content.match(hpRegex);
+        const deathMatch = content.match(/💀 \*\*(.+?)\*\* has been defeated!/);
+        let displayContent = content
+            .split('\n')
+            .filter(line => {
+                const t = line.trim();
+                if (!t || t === '\u200B') return false;
+                if (t.startsWith('💚')) return false;
+                return true;
+            })
+            .join('\n')
+            .trim();
+        turns.push({
+            turnNumber,
+            content: displayContent,
+            challengerHp: hpMatch ? { current: parseInt(hpMatch[2]), max: parseInt(hpMatch[3]) } : null,
+            opponentHp: hpMatch ? { current: parseInt(hpMatch[5]), max: parseInt(hpMatch[6]) } : null,
+            death: deathMatch ? deathMatch[1] : null
+        });
+    }
+    return { preBattle, turns };
+}
+
+function splitTurnIntoPhases(content) {
+    const lines = content.split('\n');
+    const phases = [];
+    let current = [];
+    for (const line of lines) {
+        current.push(line);
+        const t = line.trim();
+        if (t.startsWith('❤️') || (t.includes('💀') && t.includes('defeated'))) {
+            phases.push(current.join('\n').trim());
+            current = [];
+        }
+    }
+    const rest = current.join('\n').trim();
+    if (rest) {
+        if (phases.length > 0) phases[phases.length - 1] += '\n' + rest;
+        else phases.push(rest);
+    }
+    return phases.length > 0 ? phases : [content];
+}
+
+function parseHpFromPhase(phaseContent, cNick, oNick, currentCHp, currentOHp, cMaxHp, oMaxHp) {
+    let cHp = currentCHp, oHp = currentOHp;
+    for (const line of phaseContent.split('\n')) {
+        const t = line.trim();
+        const hpMatch = t.match(/❤️ \*(.+?) HP: (\d+)\/(\d+)\*/);
+        if (hpMatch) {
+            if (hpMatch[1].includes(cNick)) cHp = parseInt(hpMatch[2]);
+            else if (hpMatch[1].includes(oNick)) oHp = parseInt(hpMatch[2]);
+        }
+        if (t.includes('💀') && t.includes('defeated')) {
+            if (t.includes(cNick)) cHp = 0;
+            else if (t.includes(oNick)) oHp = 0;
+        }
+        if (t.includes('🌟') && t.includes('refuses to fall')) {
+            if (t.includes(cNick)) cHp = Math.floor(cMaxHp * 0.3);
+            else if (t.includes(oNick)) oHp = Math.floor(oMaxHp * 0.3);
+        }
+    }
+    return { cHp, oHp };
+}
 
 // Enhanced battle session management
 class BattleSessionManager {
@@ -241,10 +333,10 @@ module.exports = {
             );
             await message.reply({ embeds: [successEmbed] });
 
-            // Check if both players have selected pets
+            // Check if both players have selected pets — start immediately
             if (session.challenger.pal && session.opponent.pal) {
-                session.status = "ready_check";
-                await this.sendReadyConfirmation(message, session, client);
+                battleSessionManager.deleteSession(session.id);
+                await this.startBattle(message, session, client);
             }
         } catch (error) {
             console.error('Error in handlePetAdd:', error);
@@ -390,94 +482,7 @@ module.exports = {
         });
     },
 
-    async sendReadyConfirmation(message, battleSession, client) {
-        try {
-            const challengerUser = await client.users.fetch(battleSession.challenger.id);
-            const opponentUser = await client.users.fetch(battleSession.opponent.id);
 
-            const readyEmbed = createCustomEmbed(
-                "⚔️ Battle Ready!",
-                `Both players have selected their pets!\n\n` +
-                    `**${challengerUser.displayName}:** ${battleSession.challenger.pal.nickname} (Lvl ${battleSession.challenger.pal.level})\n` +
-                    `**${opponentUser.displayName}:** ${battleSession.opponent.pal.nickname} (Lvl ${battleSession.opponent.pal.level})\n\n` +
-                    `Click **Start Battle** when you are ready to begin!`,
-                "#4ECDC4"
-            );
-
-            // Create buttons for both players
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`ready_for_battle_${battleSession.challenger.id}`)
-                    .setLabel(`${challengerUser.username}: Start`)
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId(`ready_for_battle_${battleSession.opponent.id}`)
-                    .setLabel(`${opponentUser.username}: Start`)
-                    .setStyle(ButtonStyle.Success)
-            );
-
-            const readyMessage = await message.channel.send({
-                content: `<@${battleSession.challenger.id}> <@${battleSession.opponent.id}>`,
-                embeds: [readyEmbed],
-                components: [row],
-            });
-
-            const collector = readyMessage.createMessageComponentCollector({
-                time: 60000, // 1 minute to click ready
-            });
-
-            collector.on("collect", async (interaction) => {
-                const userId = interaction.user.id;
-                
-                // Verify user is in battle
-                if (userId !== battleSession.challenger.id && userId !== battleSession.opponent.id) {
-                    return interaction.reply({ content: "You are not part of this battle!", ephemeral: true });
-                }
-
-                await this.handlePlayerReady(interaction, battleSession, userId === battleSession.challenger.id, message, client);
-            });
-
-            collector.on("end", (collected) => {
-                // If battle started (deleted session), do nothing. If time ran out and session exists, show timeout.
-                if (battleSessionManager.sessions.has(battleSession.id)) {
-                    readyMessage.edit({ components: [] }).catch(() => {});
-                    message.channel.send("Battle cancelled - players did not ready up in time.");
-                    battleSessionManager.deleteSession(battleSession.id);
-                }
-            });
-
-        } catch (error) {
-            console.error('Error sending ready confirmation:', error);
-            battleSessionManager.deleteSession(battleSession.id);
-        }
-    },
-
-    async handlePlayerReady(interaction, battleSession, isChallenger, message, client) {
-        if (isChallenger) {
-            battleSession.challenger.ready = true;
-        } else {
-            battleSession.opponent.ready = true;
-        }
-
-        // Disable the clicked button
-        const components = interaction.message.components.map(row => {
-            const newRow = ActionRowBuilder.from(row);
-            newRow.components.forEach(comp => {
-                if (comp.data.custom_id === interaction.customId) {
-                    comp.setDisabled(true).setLabel("Ready!").setStyle(ButtonStyle.Secondary);
-                }
-            });
-            return newRow;
-        });
-
-        await interaction.update({ components });
-
-        // Check if both players are ready
-        if (battleSession.challenger.ready && battleSession.opponent.ready) {
-            battleSessionManager.deleteSession(battleSession.id); // Remove session prevents timeout logic
-            await this.startBattle(message, battleSession, client);
-        }
-    },
 
     async startBattle(message, battleSession, client) {
         try {
@@ -518,8 +523,8 @@ module.exports = {
                 challengerType, opponentType, client, combatEngine
             );
 
-            // Display results
-            await this.displayBattleResults(message, battleResult, challenger, opponent, client);
+            // Display results with turn-by-turn visualization
+            await this.playBattleTurnByTurn(message, battleResult, challenger, opponent, client);
         } catch (error) {
             console.error('Error starting battle:', error);
             await message.channel.send({
@@ -933,6 +938,19 @@ module.exports = {
                 winnerPal,
                 loserPal,
                 winnerRemainingHp,
+                challengerHp,
+                opponentHp,
+                challengerMaxHp: enhancedChallengerPal.stats.hp,
+                opponentMaxHp: enhancedOpponentPal.stats.hp,
+                challengerNickname: challengerPal.nickname,
+                opponentNickname: opponentPal.nickname,
+                challengerBasePetId: challenger.pal.basePetId,
+                opponentBasePetId: opponent.pal.basePetId,
+                challengerLevel: challengerPal.level,
+                opponentLevel: opponentPal.level,
+                challengerType,
+                opponentType,
+                turnsPlayed: turn,
             };
         } catch (error) {
             console.error('Error in PvP battle simulation:', error);
@@ -972,7 +990,7 @@ module.exports = {
             const defLost = originalDef - defender.stats.def;
             if (defLost > 0) {
                 combatEngine.logger.add(`😱 **Terror From Below!** ${attacker.nickname || 'Attacker'} strikes fear, reducing defenses!`);
-                combatEngine.logger.add(`> DEF reduced by ${defLost}`);
+                combatEngine.logger.add(`DEF reduced by ${defLost}`);
             }
         }
     },
@@ -987,43 +1005,182 @@ module.exports = {
         return 0;
     },
 
-    async displayBattleResults(message, battleResult, challenger, opponent, client) {
+    buildBattleEmbed(result, cHp, oHp, bodyContent, footerText) {
+        const cEmoji = getPalEmoji(result.challengerBasePetId);
+        const oEmoji = getPalEmoji(result.opponentBasePetId);
+        const cMaxHp = result.challengerMaxHp;
+        const oMaxHp = result.opponentMaxHp;
+        const cBar = createHpBar(Math.max(0, cHp), cMaxHp);
+        const oBar = createHpBar(Math.max(0, oHp), oMaxHp);
+        const cPercent = getHpPercent(Math.max(0, cHp), cMaxHp);
+        const oPercent = getHpPercent(Math.max(0, oHp), oMaxHp);
+        const cDead = cHp <= 0 ? ' 💀' : '';
+        const oDead = oHp <= 0 ? ' 💀' : '';
+
+        let description =
+            `## ${cEmoji} **${result.challengerNickname}** (Lv.${result.challengerLevel}) · ${result.challengerType}\n` +
+            `${cBar} ${cPercent}% — ${Math.max(0, cHp)}/${cMaxHp} HP${cDead}\n\n` +
+            `\`\`\`          ⚔️  VS  ⚔️\`\`\`\n` +
+            `## ${oEmoji} **${result.opponentNickname}** (Lv.${result.opponentLevel}) · ${result.opponentType}\n` +
+            `${oBar} ${oPercent}% — ${Math.max(0, oHp)}/${oMaxHp} HP${oDead}\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            bodyContent;
+
+        const color = (cHp <= 0 || oHp <= 0) ? '#FF4444' : '#5865F2';
+
+        return createCustomEmbed(
+            `━━━ ⚔️ PvP Battle ━━━`,
+            description,
+            color,
+            { footer: { text: footerText } }
+        );
+    },
+
+    async playBattleTurnByTurn(message, result, challenger, opponent, client) {
         try {
-            const logs = this.splitBattleLog(battleResult.log);
+            const challengerUser = await client.users.fetch(challenger.id);
+            const opponentUser = await client.users.fetch(opponent.id);
+            const { preBattle, turns } = parseTurnsFromLog(result.log);
+            const totalTurns = turns.length;
+            const cNick = result.challengerNickname;
+            const oNick = result.opponentNickname;
+            const cMaxHp = result.challengerMaxHp;
+            const oMaxHp = result.opponentMaxHp;
+            const footer = `${challengerUser.displayName} vs ${opponentUser.displayName}`;
 
-            for (let i = 0; i < logs.length; i++) {
-                const color = battleResult.winnerId === challenger.id ? "#4CAF50" : "#F44336";
-                const title = i === 0 ? "⚔️ Battle Results" : `⚔️ Battle Results (${i + 1}/${logs.length})`;
+            let cHp = cMaxHp;
+            let oHp = oMaxHp;
 
-                const resultEmbed = createCustomEmbed(title, logs[i], color);
+            // Send initial state embed
+            const initialEmbed = this.buildBattleEmbed(
+                result, cHp, oHp,
+                `\n⏳ *Battle starting...*`,
+                footer
+            );
+            const battleMsg = await message.channel.send({ embeds: [initialEmbed] });
+            await new Promise(r => setTimeout(r, 3000));
 
-                if (i === logs.length - 1) {
-                    resultEmbed.addFields([
-                        {
-                            name: "🏆 Winner",
-                            value: `<@${battleResult.winnerId}> and **${battleResult.winnerPal.nickname}**!`,
-                            inline: true,
-                        },
-                        {
-                            name: "📊 Final Stats",
-                            value: `**${battleResult.winnerPal.nickname}:** ${battleResult.winnerRemainingHp}/${battleResult.winnerPal.stats.hp} HP\n` +
-                                  `**${battleResult.loserPal.nickname}:** 0/${battleResult.loserPal.stats.hp} HP`,
-                            inline: true,
-                        },
-                    ]);
-                }
-
-                await message.channel.send({ embeds: [resultEmbed] });
-
-                if (i < logs.length - 1) {
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
+            // Show pre-battle effects
+            if (preBattle) {
+                const cleaned = preBattle.split('\n').filter(l => l.trim() && !l.trim().startsWith('🎯 **')).join('\n').trim();
+                if (cleaned) {
+                    const preEmbed = this.buildBattleEmbed(
+                        result, cHp, oHp,
+                        `\n📋 **Pre-Battle Effects**\n\n${cleaned}`,
+                        `Pre-Battle · ${footer}`
+                    );
+                    await battleMsg.edit({ embeds: [preEmbed] });
+                    await new Promise(r => setTimeout(r, 3000));
                 }
             }
-        } catch (error) {
-            console.error('Error displaying battle results:', error);
-            await message.channel.send({
-                embeds: [createErrorEmbed("Display Error", "Error displaying battle results.")],
+
+            // Turn-by-turn with phase depth for first 10 turns
+            for (let t = 0; t < totalTurns; t++) {
+                const turn = turns[t];
+                const showDetailed = t < 10;
+
+                if (showDetailed) {
+                    const phases = splitTurnIntoPhases(turn.content);
+                    for (let p = 0; p < phases.length; p++) {
+                        const hpUpdate = parseHpFromPhase(phases[p], cNick, oNick, cHp, oHp, cMaxHp, oMaxHp);
+                        cHp = hpUpdate.cHp;
+                        oHp = hpUpdate.oHp;
+
+                        const shownContent = phases.slice(0, p + 1).join('\n\n');
+                        const phaseEmbed = this.buildBattleEmbed(
+                            result, cHp, oHp,
+                            `\n**Turn ${turn.turnNumber}** of ${totalTurns}\n\n${shownContent}`,
+                            `Turn ${turn.turnNumber}/${totalTurns} · Phase ${p + 1}/${phases.length} · ${footer}`
+                        );
+                        await battleMsg.edit({ embeds: [phaseEmbed] });
+
+                        if (p < phases.length - 1) {
+                            await new Promise(r => setTimeout(r, 3000));
+                        }
+                    }
+                } else {
+                    if (turn.challengerHp) cHp = turn.challengerHp.current;
+                    if (turn.opponentHp) oHp = turn.opponentHp.current;
+                    if (turn.death) {
+                        if (turn.death.includes(cNick)) cHp = 0;
+                        if (turn.death.includes(oNick)) oHp = 0;
+                    }
+                    const turnEmbed = this.buildBattleEmbed(
+                        result, cHp, oHp,
+                        `\n**Turn ${turn.turnNumber}** of ${totalTurns}\n\n${turn.content}`,
+                        `Turn ${turn.turnNumber}/${totalTurns} · ${footer}`
+                    );
+                    await battleMsg.edit({ embeds: [turnEmbed] });
+                }
+
+                if (t < totalTurns - 1) {
+                    const delay = t < 5 ? 5000 : t < 15 ? 3000 : 2000;
+                    await new Promise(r => setTimeout(r, delay));
+                }
+            }
+
+            // Final result
+            await new Promise(r => setTimeout(r, 2000));
+            const isDraw = result.challengerHp <= 0 && result.opponentHp <= 0;
+            let resultLine;
+            if (isDraw) {
+                resultLine = `⚔️ Both pals exhausted — **Draw!**`;
+            } else {
+                const winnerName = result.winnerPal.nickname;
+                const winnerMaxHp = result.winnerId === challenger.id ? cMaxHp : oMaxHp;
+                resultLine = `🏆 **${winnerName}** wins with ${getHpPercent(result.winnerRemainingHp, winnerMaxHp)}% HP remaining!`;
+            }
+
+            const cEndHp = result.challengerHp;
+            const oEndHp = result.opponentHp;
+            const resultBody = `\n⏱️ **${result.turnsPlayed} Turns** · ${resultLine}`;
+
+            const resultColor = isDraw ? '#FFD700' :
+                result.winnerId === challenger.id ? '#4CAF50' : '#FF5722';
+
+            const resultEmbed = this.buildBattleEmbed(
+                result, Math.max(0, cEndHp), Math.max(0, oEndHp),
+                resultBody,
+                `Battle complete · ${result.turnsPlayed} turns`
+            );
+            resultEmbed.setTitle(`━━━ ⚔️ PvP Battle — Result ━━━`);
+            resultEmbed.setColor(resultColor);
+
+            // Add Battle Log button
+            const logButton = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`battle_log_1v1_${Date.now()}`)
+                    .setLabel('📜 Battle Log')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+            await battleMsg.edit({ embeds: [resultEmbed], components: [logButton] });
+
+            // Collector for battle log button
+            const collector = battleMsg.createMessageComponentCollector({ time: 120000 });
+            collector.on('collect', async (interaction) => {
+                try {
+                    const logs = this.splitBattleLog(result.log);
+                    const embeds = logs.map((chunk, i) => createCustomEmbed(
+                        `📜 Battle Log${logs.length > 1 ? ` (${i+1}/${logs.length})` : ''}`,
+                        chunk,
+                        '#5865F2'
+                    ));
+                    await interaction.reply({ embeds, ephemeral: true });
+                } catch (err) {
+                    await interaction.reply({ content: 'Error loading log.', ephemeral: true }).catch(() => {});
+                }
             });
+            collector.on('end', () => {
+                battleMsg.edit({ components: [] }).catch(() => {});
+            });
+
+        } catch (error) {
+            console.error('Error in turn-by-turn battle display:', error);
+            // Fallback: send the log as text
+            const logs = this.splitBattleLog(result.log);
+            for (const chunk of logs) {
+                await message.channel.send({ embeds: [createCustomEmbed('⚔️ Battle Results', chunk, '#5865F2')] });
+            }
         }
     },
 

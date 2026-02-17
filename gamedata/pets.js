@@ -260,8 +260,8 @@ module.exports = {
         playstyle: 'Death Knight',
         pic: 'https://cdn.discordapp.com/attachments/920231858204200961/1412752881416802355/download_2.png?ex=68b97026&is=68b81ea6&hm=edf7d38cde36bd67f544c00539f96ff6dc8953b1cb5de0ad66861a1d820bfa96&'
     },
-    'shadow_wyrm': {
-        name: 'Shadow Wyrm',
+    'dreadlord': {
+        name: 'Dreadlord',
         rarity: 'Legendary',
         type: 'Undead',
         description: 'A draconic nightmare that emerges from the darkest corners of the underworld.',

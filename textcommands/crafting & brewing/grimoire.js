@@ -150,17 +150,29 @@ module.exports = {
 
                 if (potion.effect) {
                     let effectDesc = '';
+
+                    const formatDuration = (dur) => {
+                        if (typeof dur === 'string') return dur.replace(/_/g, ' ');
+                        const totalMinutes = Math.round(dur / (60 * 1000));
+                        if (totalMinutes < 60) return `${totalMinutes} minute${totalMinutes !== 1 ? 's' : ''}`;
+                        const hours = Math.round(totalMinutes / 60);
+                        return `${hours} hour${hours !== 1 ? 's' : ''}`;
+                    };
+
                     if (potion.effect.type === 'heal') {
                         effectDesc = `Restores ${potion.effect.value} HP`;
                     } else if (potion.effect.type === 'stat_boost') {
-                        effectDesc = `+${potion.effect.value} ${potion.effect.stat.toUpperCase()} for ${potion.effect.duration.replace('_', ' ')}`;
+                        const stats = Object.entries(potion.effect.stats).map(([stat, val]) => 
+                            `+${val} ${stat.toUpperCase()}`
+                        ).join(', ');
+                        effectDesc = `${stats} for ${formatDuration(potion.effect.duration)}`;
                     } else if (potion.effect.type === 'multi_boost') {
                         const stats = Object.entries(potion.effect.stats).map(([stat, val]) => 
                             `+${val} ${stat.toUpperCase()}`
                         ).join(', ');
-                        effectDesc = `${stats} for ${potion.effect.duration.replace('_', ' ')}`;
+                        effectDesc = `${stats} for ${formatDuration(potion.effect.duration)}`;
                     } else if (potion.effect.type === 'special') {
-                        effectDesc = `Special: ${potion.effect.ability.replace('_', ' ')} for ${potion.effect.duration.replace('_', ' ')}`;
+                        effectDesc = `Special: ${potion.effect.ability.replace(/_/g, ' ')} for ${formatDuration(potion.effect.duration)}`;
                     }
                     embed.addFields({ name: 'Effect', value: effectDesc, inline: false });
                 }
@@ -171,7 +183,7 @@ module.exports = {
                     ).join('\n');
                     
                     embed.addFields(
-                        { name: '🧪 Recipe', value: ingredients, inline: false },
+                        { name: 'Recipe', value: ingredients, inline: false },
                         { name: 'XP Reward', value: `${recipe.xp} XP`, inline: true },
                         { name: 'Required Level', value: `Level ${recipe.level}`, inline: true }
                     );

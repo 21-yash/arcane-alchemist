@@ -155,7 +155,7 @@ module.exports = {
             { itemId: 'nightmare_orb', chance: 0.01, quantityRange: [1, 1] },
         ],
         possiblePals: [
-            { palId: 'shadow_wyrm', chance: 0.004},
+            { palId: 'dreadlord', chance: 0.004},
             { palId: 'aether_wing_drake', chance: 0.005},
             { palId: 'phantom_knight', chance: 0.02},
             { palId: 'bone_hound', chance: 0.08},
@@ -181,5 +181,5 @@ BIOME DISTRIBUTION:
 - Frozen Forest: Ice/ancient pets (Frost Serpent, Ancient Treant)
 - Sky Citadel: Flying/storm/celestial pets (Iron Gryphon, Storm Roc, Celestial Kirin)
 - Iron Foundry: Large mechanical pets (Iron Colossus, Clockwork Dragon)
-- Shadow Realm: Dark/undead legendary pets (Shadow Wyrm)
+- Shadow Realm: Dark/undead legendary pets (Dreadlord)
 */
