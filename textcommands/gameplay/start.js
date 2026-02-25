@@ -143,6 +143,95 @@ module.exports = {
                     }
                 });
 
+                // --- After confirm_start, send tutorial prompt ---
+                buttonCollector.on('end', async (btnCollected, btnReason) => {
+                    // Only show tutorial prompt if the player confirmed (not if it timed out)
+                    if (btnReason !== 'time' && btnCollected.size > 0) {
+                        const lastBtn = btnCollected.last();
+                        if (lastBtn && lastBtn.customId === 'confirm_start') {
+                            try {
+                                const tutorialPromptEmbed = new EmbedBuilder()
+                                    .setColor('#9B59B6')
+                                    .setTitle('🧙‍♂️ Begin Your Training?')
+                                    .setDescription(
+                                        `*An elderly alchemist approaches you with a warm smile...*\n\n` +
+                                        `"Welcome, young one! I am **Eldric, the Grand Alchemist**. Would you like me to show you the ropes? ` +
+                                        `The tutorial only takes a few minutes and will teach you everything you need to know!"\n\n` +
+                                        `> 📖 Learn about **foraging**, **brewing**, **Pals**, **dungeons**, and more!\n` +
+                                        `> 🎁 Earn **bonus rewards** for completing the tutorial!`
+                                    );
+
+                                const tutorialButtons = new ActionRowBuilder().addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId('start_tutorial_yes')
+                                        .setLabel('📖 Start Tutorial')
+                                        .setStyle(ButtonStyle.Success),
+                                    new ButtonBuilder()
+                                        .setCustomId('start_tutorial_skip')
+                                        .setLabel('⏩ Skip for Now')
+                                        .setStyle(ButtonStyle.Secondary)
+                                );
+
+                                const tutorialPrompt = await message.channel.send({ 
+                                    embeds: [tutorialPromptEmbed], 
+                                    components: [tutorialButtons] 
+                                });
+
+                                const tutorialCollector = tutorialPrompt.createMessageComponentCollector({
+                                    filter: (i) => i.user.id === message.author.id,
+                                    componentType: ComponentType.Button,
+                                    time: 60000
+                                });
+
+                                tutorialCollector.on('collect', async (tutInteraction) => {
+                                    if (tutInteraction.customId === 'start_tutorial_yes') {
+                                        await tutInteraction.update({ 
+                                            embeds: [new EmbedBuilder()
+                                                .setColor('#9B59B6')
+                                                .setDescription('📖 Starting tutorial...')
+                                            ], 
+                                            components: [] 
+                                        });
+                                        // Run the tutorial command
+                                        const tutorialCmd = client.textCommands.get('tutorial');
+                                        if (tutorialCmd) {
+                                            await tutorialCmd.execute(message, [], client, prefix);
+                                        }
+                                    } else if (tutInteraction.customId === 'start_tutorial_skip') {
+                                        const updatedPlayer = await Player.findOne({ userId: message.author.id });
+                                        if (updatedPlayer) {
+                                            updatedPlayer.tutorialStep = -1;
+                                            await updatedPlayer.save();
+                                        }
+                                        await tutInteraction.update({ 
+                                            embeds: [new EmbedBuilder()
+                                                .setColor('#F59E0B')
+                                                .setDescription(`⏩ Tutorial skipped! You can always start it later with \`${prefix}tutorial\`.`)
+                                            ], 
+                                            components: [] 
+                                        });
+                                    }
+                                    tutorialCollector.stop();
+                                });
+
+                                tutorialCollector.on('end', (collected, reason) => {
+                                    if (reason === 'time' && collected.size === 0) {
+                                        tutorialPrompt.edit({ 
+                                            embeds: [new EmbedBuilder()
+                                                .setColor('#9B59B6')
+                                                .setDescription(`⏰ Tutorial prompt expired. Use \`${prefix}tutorial\` anytime to start!`)
+                                            ], 
+                                            components: [] 
+                                        }).catch(() => {});
+                                    }
+                                });
+                            } catch (tutErr) {
+                                console.error('Tutorial prompt error:', tutErr);
+                            }
+                        }
+                    }
+                });
+
                 buttonCollector.on('end', (collected, reason) => {
                     if (reason === 'time') {
                         const timeoutEmbed = createErrorEmbed('Confirmation Timed Out', `You did not confirm your choice in time. Please run the \`${prefix}start\` command again.`);

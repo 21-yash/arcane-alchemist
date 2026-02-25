@@ -234,6 +234,44 @@ class TypeAdvantage {
  * Skill Tree Manager
  */
 class SkillManager {
+    // Centralized skill emoji map: skill type -> config emoji key (with fallback)
+    static SKILL_EMOJI = {
+        dodge:                  { key: 'Dodge',                 fallback: '💨' },
+        counter:                { key: 'Counter Damage',        fallback: '⚔️' },
+        execute:                { key: 'Apex Predator',         fallback: '🩸' },
+        divine_protection:      { key: 'Devine Intervention',   fallback: '✨' },
+        overload:               { key: 'Overload',              fallback: '⚡' },
+        dark_ritual:            { key: 'Dark Ritual',           fallback: '🩸' },
+        lich_transformation:    { key: 'Lich Transformation',   fallback: '💀' },
+        celestial_barrier:      { key: 'Celestial Barrier',     fallback: '🛡️' },
+        lifesteal:              { key: 'Life Drain',            fallback: '🩸' },
+        multiAttack:            { key: 'System Enhancement',    fallback: '⚡' },
+        hpRegen:                { key: 'Healing Light',         fallback: '✨' },
+        revive:                 { key: 'Healing Light',         fallback: '🌟' },
+        chainReaction:          { key: 'Overload',              fallback: '⚡' },
+        armor_plating:          { key: 'Armor Plating',         fallback: '🛡️' },
+        self_repair:            { key: 'Self Repair',         fallback: '🔧' },
+        elemental_shield:       { key: 'Elemental Shield',      fallback: '🛡️' },
+        elemental_storm:        { key: 'Elemental Storm',       fallback: '🌪️' },
+        abyssal_devourer:       { key: 'Abyssal Devourer',      fallback: '🌊' },
+        temporal_echo:          { key: 'Temporal Echo',         fallback: '⏰' },
+        paradox_loop:           { key: 'Paradox Loop',          fallback: '🔮' },
+        feral_instinct:         { key: 'Feral Instinct',        fallback: '💨' },
+        blood_frenzy:           { key: 'Blood Frenzy',          fallback: '🩸' },
+        undying_will:           { key: 'Undying Will',          fallback: '💀' },
+        crushing_pressure:      { key: 'Crushing Presence',     fallback: '🌊' },
+        abyssal_tide:           { key: 'Abyssal Tides',         fallback: '🌊' },
+        terror_from_below:      { key: 'Terror Frombelow',      fallback: '😱' },
+        decay:                  { key: 'Decay',                 fallback: '⏳' },
+        mystic_resonance:       { key: 'Mystic Resonance',      fallback: '🔮' },
+        reflected_damage:       { key: 'Reflected Damage',      fallback: '⚡' },
+    };
+
+    static icon(type) {
+        const entry = this.SKILL_EMOJI[type];
+        if (!entry) return '';
+        return Y[entry.key] || entry.fallback;
+    }
     static async ensureSkillTree(pet) {
         if (!pet?.petId) throw new Error('Pet with petId is required');
 
@@ -404,7 +442,7 @@ class SkillManager {
         if (chance && Math.random() < chance) {
             return {
                 type: "dodge",
-                message: `**${creature.nickname || creature.name}** dodges with feral instinct!`,
+                message: `${this.icon('feral_instinct')} **${creature.nickname || creature.name}** dodges with feral instinct!`,
             };
         }
         return null;
@@ -415,7 +453,7 @@ class SkillManager {
         if (chance && Math.random() < chance) {
             return {
                 type: "counter",
-                message: `**${creature.nickname || creature.name}** counter-attacks!`,
+                message: `${this.icon('counter')} **${creature.nickname || creature.name}** counter-attacks!`,
                 damage: Math.floor(creature.stats.atk * 0.7)
             };
         }
@@ -430,7 +468,7 @@ class SkillManager {
             return {
                 type: "execute",
                 multiplier: creature.skillBonuses.executeMultiplier || 2.0,
-                message: `🩸 **Apex Predator!** ${creature.nickname || creature.name} delivers a devastating finishing blow!`
+                message: `${this.icon('execute')} **Apex Predator!** ${creature.nickname || creature.name} delivers a devastating finishing blow!`
             };
         }
         return null;
@@ -442,7 +480,7 @@ class SkillManager {
             return {
                 type: "divine_protection",
                 retribution: creature.skillBonuses.divineRetribution || 0,
-                message: `✨ **Divine Intervention!** ${creature.nickname || creature.name} is protected by divine light!`,
+                message: `${this.icon('divine_protection')} **Divine Intervention!** ${creature.nickname || creature.name} is protected by divine light!`,
             };
         }
         return null;
@@ -454,7 +492,7 @@ class SkillManager {
             return {
                 type: "overload",
                 multiplier: creature.skillBonuses.overloadDamage || 2.0,
-                message: `⚡ **System Overload!** ${creature.nickname || creature.name}'s circuits surge with power!`
+                message: `${this.icon('overload')} **System Overload!** ${creature.nickname || creature.name}'s circuits surge with power!`
             };
         }
         return null;
@@ -472,7 +510,7 @@ class SkillManager {
                     type: "dark_ritual",
                     sacrifice: sacrificeAmount,
                     multiplier: powerBonus,
-                    message: `🩸 **Dark Ritual!** ${creature.nickname || creature.name} sacrifices life force for power!`
+                    message: `${this.icon('dark_ritual')} **Dark Ritual!** ${creature.nickname || creature.name} sacrifices life force for power!`
                 };
             }
         }
@@ -489,7 +527,7 @@ class SkillManager {
                 type: "lich_transformation",
                 duration: invulnerability,
                 multiplier: powerMultiplier,
-                message: `💀 **Lich Transformation!** ${creature.nickname || creature.name} transcends mortal limits!`
+                message: `${this.icon('lich_transformation')} **Lich Transformation!** ${creature.nickname || creature.name} transcends mortal limits!`
             };
         }
         return null;
@@ -501,7 +539,7 @@ class SkillManager {
             return {
                 type: "celestial_barrier",
                 absorb: creature.skillBonuses.barrierAbsorb || 0.3,
-                message: `🛡️ **Celestial Barrier!** ${creature.nickname || creature.name} creates a protective shield!`
+                message: `${this.icon('celestial_barrier')} **Celestial Barrier!** ${creature.nickname || creature.name} creates a protective shield!`
             };
         }
         return null;
@@ -513,7 +551,7 @@ class SkillManager {
             return {
                 type: "lifesteal",
                 percentage: lifesteal,
-                message: `🩸 **Life Drain!** ${creature.nickname || creature.name} absorbs life energy!`
+                message: `${this.icon('lifesteal')} **Life Drain!** ${creature.nickname || creature.name} absorbs life energy!`
             };
         }
         return null;
@@ -524,7 +562,7 @@ class SkillManager {
         if (chance && Math.random() < chance) {
             return {
                 type: "multiAttack",
-                message: `⚡ **System Enhancement!** ${creature.nickname || creature.name} attacks multiple times!`
+                message: `${this.icon('multiAttack')} **System Enhancement!** ${creature.nickname || creature.name} attacks multiple times!`
             };
         }
         return null;
@@ -537,7 +575,7 @@ class SkillManager {
             return {
                 type: "hpRegen",
                 heal: healAmount,
-                message: `✨ **Healing Light!** ${creature.nickname || creature.name} regenerates ${healAmount} HP!`
+                message: `${this.icon('hpRegen')} **Healing Light!** ${creature.nickname || creature.name} regenerates ${healAmount} HP!`
             };
         }
         return null;
@@ -548,7 +586,7 @@ class SkillManager {
         if (chance && Math.random() < chance) {
             return {
                 type: "revive",
-                message: `🌟 **Miraculous Revival!** ${creature.nickname || creature.name} refuses to fall!`
+                message: `${this.icon('revive')} **Miraculous Revival!** ${creature.nickname || creature.name} refuses to fall!`
             };
         }
         return null;
@@ -559,7 +597,7 @@ class SkillManager {
         if (chance && Math.random() < chance) {
             return {
                 type: "chainReaction",
-                message: `⚡ **Chain Reaction!** ${creature.nickname || creature.name}'s overload spreads!`,
+                message: `${this.icon('chainReaction')} **Chain Reaction!** ${creature.nickname || creature.name}'s overload spreads!`,
                 damage: Math.floor(creature.stats.atk * 0.5)
             };
         }
@@ -573,7 +611,7 @@ class SkillManager {
             return {
                 type: "selfRepair",
                 heal: repairAmount,
-                message: `🔧 **Self Repair!** ${creature.nickname || creature.name} automatically repairs damage!`
+                message: `${this.icon('armor_plating')} **Self Repair!** ${creature.nickname || creature.name} automatically repairs damage!`
             };
         }
         return null;
@@ -586,7 +624,7 @@ class SkillManager {
                 type: "elemental_shield",
                 absorb: creature.skillBonuses.elementalAbsorb || 0.5,
                 reflection: creature.skillBonuses.reflection || 0.2,
-                message: `🛡️ **Elemental Shield!** ${creature.nickname || creature.name} activates an elemental shield!`
+                message: `${this.icon('elemental_shield')} **Elemental Shield!** ${creature.nickname || creature.name} activates an elemental shield!`
             };
         }
         return null;
@@ -600,7 +638,7 @@ class SkillManager {
                 multiplier: creature.skillBonuses.damage || 2.5,
                 areaAttack: creature.skillBonuses.areaAttack || true,
                 multiStatus: creature.skillBonuses.multiStatus || true,
-                message: `🌪️ **Elemental Storm!** ${creature.nickname || creature.name} unleashes elemental fury!`
+                message: `${this.icon('elemental_storm')} **Elemental Storm!** ${creature.nickname || creature.name} unleashes elemental fury!`
             };
         }
         return null;
@@ -617,7 +655,7 @@ class SkillManager {
                 lifesteal: lifesteal || 0.25,
                 multiplier: areaDamage,
                 instantFear: instantFear,
-                message: `🌊 **Abyssal Devourer!** ${creature.nickname || creature.name} unleashes void tentacles!`
+                message: `${this.icon('abyssal_devourer')} **Abyssal Devourer!** ${creature.nickname || creature.name} unleashes void tentacles!`
             };
         }
         return null;
@@ -631,7 +669,7 @@ class SkillManager {
             return {
                 type: "temporal_echo",
                 multiplier: echoDamageMultiplier,
-                message: `⏰ **Temporal Echo!** ${creature.nickname || creature.name}'s attack echoes through time!`
+                message: `${this.icon('temporal_echo')} **Temporal Echo!** ${creature.nickname || creature.name}'s attack echoes through time!`
             };
         }
         return null;
@@ -646,7 +684,7 @@ class SkillManager {
                 type: "paradox_loop",
                 immunity: true,
                 recoilPercent: creature.skillBonuses.recoilPercent || 0.5,
-                message: `🔮 **Paradox Loop!** ${creature.nickname || creature.name} phases out of time!`
+                message: `${this.icon('paradox_loop')} **Paradox Loop!** ${creature.nickname || creature.name} phases out of time!`
             };
         }
         return null;
@@ -954,7 +992,6 @@ class WeaponAbilityProcessor {
         lightning_strike: { chance: 0.25, multiplier: 0.5, message: "Lightning Strike", icon: Y['Stormcaller Staff'] },
         lightning_fork: { chance: 0.25, multiplier: 0.5, message: "Lightning Strike", icon: Y['Storm Trident'] },
         shadow_strike: { chance: 0.25, multiplier: 1.0, message: "Shadow Strike", icon: Y['Shadow Dagger'] },
-        shadow_blend: { chance: 0.25, multiplier: 1.0, message: "Shadow Strike", icon: Y['Void Cloak'] },
         volcanic_edge: { chance: 0.2, multiplier: 0.4, message: "Volcanic Edge", icon: Y['Obsidian Katana'] },
         terror_strike: { chance: 0.15, multiplier: 1.5, message: "Terror Strike", icon: Y['Nightmare Cleaver']  },
         divine_thrust: { chance: 0.3, multiplier: 0.6, message: "Divine Thrust", icon: Y['Celestial Lance'] },
@@ -1035,12 +1072,12 @@ class StatusProcessor {
             // Handle special Abyssal effects
             if (attacker.skillBonuses?.drownChance && Math.random() < attacker.skillBonuses.drownChance) {
                 StatusEffectManager.applyStatusEffect(target, 'drown');
-                logger.add(`🌊 **${attackerName}** drowns the enemy in abyssal waters!`);
+                logger.add(`${SkillManager.icon('abyssal_tide')} **${attackerName}** drowns the enemy in abyssal waters!`);
             }
 
             if (attacker.skillBonuses?.fearChance && Math.random() < attacker.skillBonuses.fearChance) {
                 StatusEffectManager.applyStatusEffect(target, 'fear');
-                logger.add(`😱 **Terror From Below!** ${attackerName} strikes terror into the enemy!`);
+                logger.add(`${SkillManager.icon('terror_from_below')} **Terror From Below!** ${attackerName} strikes terror into the enemy!`);
             }
 
             if (attacker.skillBonuses?.silenceChance && Math.random() < attacker.skillBonuses.silenceChance) {
@@ -1096,10 +1133,10 @@ class EquipmentEffectProcessor {
 
         try {
             const effects = {
-                shadow_step: { chance: 0.15, reduction: 0.2, message: "moves like a shadow", icon: Y['Shadow Weave Pants'] },
-                shadow_blend: { chance: 0.15, reduction: 0.2, message: "moves like a shadow", icon: Y['Void Cloak'] },
+                shadow_step: { chance: 0.15, reduction: 0.2, message: "moves like a shadow, negating some damage", icon: Y['Shadow Weave Pants'] },
+                shadow_blend: { chance: 0.15, reduction: 0.2, message: "moves like a shadow, negating some damage", icon: Y['Void Cloak'] },
                 spirit_guard: { chance: 0.25, reduction: 0.3, message: "'s spirit guardian provides protection", icon: Y['Spirit Orb'] },
-                void_absorption: { chance: 0.2, reduction: 0.5, message: "'s void shield absorbs the attack", icon: Y['Void Shield'] },
+                void_absorption: { chance: 0.2, reduction: 0.8, message: "'s void shield absorbs the attack", icon: Y['Void Shield'] },
                 shield_block: { chance: 0.25, reduction: 0.2, message: "'s shield blocks some damage", icon: "🛡️" }
             };
 
@@ -1243,8 +1280,8 @@ class CombatEngine {
                 // Handle paradox loop reflection damage from previous turn
                 if (paradoxState.pendingRecoil) {
                     if (paradoxState.storedDamage > 0) {
-                        this.logger.add(`⏰ **Temporal Reflection!** The attack reverses through time!`);
-                        this.logger.add(`💫 **${enemy.name}** takes ${paradoxState.storedDamage} reflected damage!`);
+                        this.logger.add(`${SkillManager.icon('temporal_echo')} **Temporal Reflection!** The attack reverses through time!`);
+                        this.logger.add(`${SkillManager.icon('reflected_damage')} **${enemy.name}** takes ${paradoxState.storedDamage} reflected damage!`);
                         enemyCurrentHp = Math.max(0, enemyCurrentHp - paradoxState.storedDamage);
                         
                         if (enemyCurrentHp <= 0) {
@@ -1286,19 +1323,19 @@ class CombatEngine {
                     }
                     if (attackResult.lichActivated) {
                         invulnerabilityTurns = 1;
-                        this.logger.add(`💀 **${pal.nickname || pal.name}** transcends mortality - invulnerable for 1 turn!`);
+                        this.logger.add(`${SkillManager.icon('lich_transformation')} **${pal.nickname || pal.name}** transcends mortality - invulnerable for 1 turn!`);
                     }
                     
                     // Apply reflected damage from elemental shield
                     if (attackResult.reflectedDamage > 0) {
                         palCurrentHp = Math.max(0, palCurrentHp - attackResult.reflectedDamage);
-                        this.logger.add(`⚡ **${pal.nickname || pal.name} takes ${attackResult.reflectedDamage} reflected damage!**`);
+                        this.logger.add(`${SkillManager.icon('reflected_damage')} **${pal.nickname || pal.name} takes ${attackResult.reflectedDamage} reflected damage!**`);
                     }
                     
                     // Handle Abyssal Devourer fear application
                     if (attackResult.applyFear) {
                         StatusEffectManager.applyStatusEffect(enemy, 'fear');
-                        this.logger.add(`😱 **${enemy.name}** is struck with primal terror!`);
+                        this.logger.add(`${SkillManager.icon('terror_from_below')} **${enemy.name}** is struck with primal terror!`);
                     }
                     
                     if (attackResult.lifesteal > 0) {
@@ -1348,7 +1385,7 @@ class CombatEngine {
                             const wouldBeDamage = Math.max(0, simulatedAttack.damage);
                             const storedChunk = Math.floor(wouldBeDamage * paradoxState.recoilPercent);
                             paradoxState.storedDamage += storedChunk;
-                            this.logger.add(`⏰ *Storing ${storedChunk} temporal damage (total ${paradoxState.storedDamage}).*`);
+                            this.logger.add(`${SkillManager.icon('paradox_loop')} *Storing ${storedChunk} temporal damage (total ${paradoxState.storedDamage}).*`);
                             paradoxState.active = false;
                             paradoxState.pendingRecoil = true;
                         }
@@ -1369,7 +1406,7 @@ class CombatEngine {
                         // Apply reflected damage from elemental shield
                         if (enemyAttackResult.reflectedDamage > 0) {
                             enemyCurrentHp = Math.max(0, enemyCurrentHp - enemyAttackResult.reflectedDamage);
-                            this.logger.add(`⚡ **${enemy.name} takes ${enemyAttackResult.reflectedDamage} reflected damage!**`);
+                            this.logger.add(`${SkillManager.icon('reflected_damage')} **${enemy.name} takes ${enemyAttackResult.reflectedDamage} reflected damage!**`);
                         }
 
                         if (palCurrentHp <= 0) {
@@ -1377,7 +1414,8 @@ class CombatEngine {
                                 const reviveHp = Math.floor(enhancedPal.stats.hp * 0.3);
                                 palCurrentHp = reviveHp;
                                 reviveUsed = true;
-                                this.logger.add(`🌟 **Revival!** ${pal.nickname || pal.name} refuses to stay down!`);
+                                const reviveIcon = palType === 'Undead' ? SkillManager.icon('undying_will') : SkillManager.icon('revive');
+                                this.logger.add(`${reviveIcon} **Revival!** ${pal.nickname || pal.name} refuses to stay down!`);
                             } else {
                                 this.logger.add(`💀 Your **${pal.nickname || pal.name}** has been defeated!`);
                                 break;
@@ -1452,7 +1490,7 @@ class CombatEngine {
                 let retributionDamage = 0;
                 if (divineProtection.retribution && divineProtection.retribution > 0) {
                     retributionDamage = Math.floor(defender.stats.atk * divineProtection.retribution);
-                    logger.add(`⚡ **Divine Retribution!** The attacker takes ${retributionDamage} holy damage!`);
+                    logger.add(`${SkillManager.icon('divine_protection')} **Divine Retribution!** The attacker takes ${retributionDamage} holy damage!`);
                 }
                 
                 return { damage: 0, lifesteal: 0, applyFear: false, counterDamage: retributionDamage };
@@ -1488,7 +1526,7 @@ class CombatEngine {
             }
             
             if (Math.random() > effectiveHitChance) {
-                logger.add(`💨 **${attackerName}**'s attack misses!`);
+                logger.add(`${SkillManager.icon('dodge')} **${attackerName}**'s attack misses!`);
                 return { 
                     damage: 0, 
                     lifesteal: 0, 
@@ -1541,12 +1579,12 @@ class CombatEngine {
                     logger.add(elementalShield.message);
                     const absorbedDamage = Math.floor(attack.damage * elementalShield.absorb);
                     attack.damage -= absorbedDamage;
-                    logger.add(`🛡️ **Shield absorbs ${absorbedDamage} damage!**`);
+                    logger.add(`${SkillManager.icon('elemental_shield')} **Shield absorbs ${absorbedDamage} damage!**`);
                     
                     const reflectThisHit = Math.floor(absorbedDamage * elementalShield.reflection);
                     reflectDamageTotal += reflectThisHit;
                     if (reflectThisHit > 0) {
-                        logger.add(`⚡ **Shield reflects ${reflectThisHit} damage back!**`);
+                        logger.add(`${SkillManager.icon('reflected_damage')} **Shield reflects ${reflectThisHit} damage back!**`);
                     }
                 }
 
@@ -1555,7 +1593,7 @@ class CombatEngine {
                     const originalDamage = attack.damage;
                     attack.damage = Math.floor(attack.damage * (1 - defender.skillBonuses.damageReduction));
                     if (originalDamage !== attack.damage) {
-                        logger.add(`🛡️ **Damage Reduction** reduces damage by ${originalDamage - attack.damage}!`);
+                        logger.add(`${SkillManager.icon('armor_plating')} **Damage Reduction** reduces damage by ${originalDamage - attack.damage}!`);
                     }
                 }
 
@@ -1584,7 +1622,7 @@ class CombatEngine {
                     logger.add(temporalEcho.message);
                     const echoDamage = Math.floor(attack.damage * temporalEcho.multiplier);
                     totalDamage += echoDamage;
-                    logger.add(`⏰ **Echo Strike** deals **${echoDamage}** additional damage!`);
+                    logger.add(`${SkillManager.icon('temporal_echo')} **Echo Strike** deals **${echoDamage}** additional damage!`);
                 }
             }
 
@@ -1592,20 +1630,20 @@ class CombatEngine {
             if (defenderHasBarrier && barrierAbsorb) {
                 const absorbedDamage = Math.floor(totalDamage * barrierAbsorb);
                 totalDamage -= absorbedDamage;
-                logger.add(`🛡️ Barrier absorbed ${absorbedDamage} damage!`);
+                logger.add(`${SkillManager.icon('celestial_barrier')} Barrier absorbed ${absorbedDamage} damage!`);
             }
 
             // Apply lifesteal
             if (attacker.skillBonuses?.lifesteal) {
                 lifesteal = Math.floor(totalDamage * attacker.skillBonuses.lifesteal);
-                logger.add(`💉 **Life Drain!** ${attackerName} recovers ${lifesteal} HP!`);
+                logger.add(`${SkillManager.icon('lifesteal')} **Life Drain!** ${attackerName} recovers ${lifesteal} HP!`);
             }
 
             // Apply Abyssal Tide (dotDamage) - damage over time
             if (attacker.skillBonuses?.dotDamage) {
                 const dotDamage = Math.floor(totalDamage * attacker.skillBonuses.dotDamage);
                 if (dotDamage > 0) {
-                    logger.add(`🌊 **Abyssal Tide!** Dark waters deal ${dotDamage} damage over time!`);
+                    logger.add(`${SkillManager.icon('abyssal_tide')} **Abyssal Tide!** Dark waters deal ${dotDamage} damage over time!`);
                     // Apply the dot damage immediately as additional damage
                     totalDamage += dotDamage;
                 }
@@ -1642,7 +1680,7 @@ class CombatEngine {
                 const counterSkill = SkillManager.checkActivation(defender, "counter");
                 if (counterSkill?.type === "counter") {
                     logger.add(counterSkill.message);
-                    logger.add(`⚔️ Counter-attack deals **${counterSkill.damage}** damage!`);
+                    logger.add(`${SkillManager.icon('counter')} Counter-attack deals **${counterSkill.damage}** damage!`);
                 }
                 return { damage: 0 };
             }
@@ -1667,11 +1705,11 @@ class CombatEngine {
                 
                 const absorbedDamage = Math.floor(attack.damage * elementalShield.absorb);
                 attack.damage -= absorbedDamage;
-                logger.add(`🛡️ **Shield absorbs ${absorbedDamage} damage!**`);
+                logger.add(`${SkillManager.icon('elemental_shield')} **Shield absorbs ${absorbedDamage} damage!**`);
                 
                 reflectDamage = Math.floor(absorbedDamage * elementalShield.reflection);
                 if (reflectDamage > 0) {
-                    logger.add(`⚡ **Shield reflects ${reflectDamage} damage back to ${attackerName}!**`);
+                    logger.add(`${SkillManager.icon('reflected_damage')} **Shield reflects ${reflectDamage} damage back to ${attackerName}!**`);
                 }
             }
 
@@ -1680,7 +1718,7 @@ class CombatEngine {
                 const originalDamage = attack.damage;
                 attack.damage = Math.floor(attack.damage * (1 - defender.skillBonuses.damageReduction));
                 if (originalDamage !== attack.damage) {
-                    logger.add(`🛡️ **Armor Plating** reduces damage by ${originalDamage - attack.damage}!`);
+                    logger.add(`${SkillManager.icon('armor_plating')} **Armor Plating** reduces damage by ${originalDamage - attack.damage}!`);
                 }
             }
 
@@ -1775,7 +1813,7 @@ class CombatEngine {
                     const frenzyBonus = 1 + (missingHpPercent * attacker.skillBonuses.frenzyDamage);
                     multiplier *= frenzyBonus;
                     const bonusPercent = Math.round(missingHpPercent * attacker.skillBonuses.frenzyDamage * 100);
-                    logger.add(`🩸 **Blood Frenzy!** ${attackerName} gains +${bonusPercent}% damage from wounds!`);
+                    logger.add(`${SkillManager.icon('blood_frenzy')} **Blood Frenzy!** ${attackerName} gains +${bonusPercent}% damage from wounds!`);
                 }
             }
 
@@ -1787,12 +1825,12 @@ class CombatEngine {
                 
                 if (attacker.resonanceStack >= maxStacks && attacker.skillBonuses.maxResonanceBurst) {
                     multiplier *= attacker.skillBonuses.maxResonanceBurst;
-                    logger.add(`✨ **RESONANCE BURST!** ${attackerName} unleashes ${attacker.resonanceStack} stacks of arcane power!`);
+                    logger.add(`${SkillManager.icon('mystic_resonance')} **RESONANCE BURST!** ${attackerName} unleashes ${attacker.resonanceStack} stacks of arcane power!`);
                     attacker.resonanceStack = 0; 
                 } else if (attacker.resonanceStack > 0) {
                     const stackBonus = 1 + (attacker.resonanceStack * perStack);
                     multiplier *= stackBonus;
-                    logger.add(`🔮 **Resonance Stack ${attacker.resonanceStack}!** +${Math.round(attacker.resonanceStack * perStack * 100)}% damage`);
+                    logger.add(`${SkillManager.icon('mystic_resonance')} **Resonance Stack ${attacker.resonanceStack}!** +${Math.round(attacker.resonanceStack * perStack * 100)}% damage`);
                 }
                 
                 if (attacker.resonanceStack < maxStacks) {
@@ -1833,7 +1871,7 @@ class CombatEngine {
                 multiplier *= lichTransform.multiplier;
                 lichActivated = true;
                 logger.add(lichTransform.message);
-                logger.add(`💀 **Lich Power!** ${attackerName} channels dark energy for devastating power!`);
+                logger.add(`${SkillManager.icon('lich_transformation')} **Lich Power!** ${attackerName} channels dark energy for devastating power!`);
             }
            
             if (abyssalDevourer?.type === "abyssal_devourer") {
@@ -1920,7 +1958,7 @@ class CombatEngine {
                 const healing = Math.floor(creature.stats.hp * creature.skillBonuses.hpRegen);
                 if (healing > 0) {
                     newHp = Math.min(creature.stats.hp, newHp + healing);
-                    this.logger.add(`💚 **Regeneration:** ${creatureName} recovers ${healing} HP!`);
+                    this.logger.add(`${SkillManager.icon('hpRegen')} **Regeneration:** ${creatureName} recovers ${healing} HP!`);
                 }
             }
 
@@ -1928,7 +1966,7 @@ class CombatEngine {
                 const repairAmount = Math.floor(creature.stats.hp * creature.skillBonuses.selfRepair);
                 if (repairAmount > 0) {
                     newHp = Math.min(creature.stats.hp, newHp + repairAmount);
-                    this.logger.add(`🔧 **Self Repair:** ${creatureName} repairs ${repairAmount} HP!`);
+                    this.logger.add(`${SkillManager.icon('self_repair')} **Self Repair:** ${creatureName} repairs ${repairAmount} HP!`);
                 }
             }
         } catch (error) {

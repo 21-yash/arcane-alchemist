@@ -924,7 +924,7 @@ module.exports = {
                     opponentPal.stats.spd = Math.floor(opponentPal.stats.spd * (1 - spdReduction));
                     const atkLost = originalAtk - opponentPal.stats.atk;
                     const spdLost = originalSpd - opponentPal.stats.spd;
-                    combatEngine.logger.add(`🌊 **Crushing Pressure!** The abyss squeezes ${opponentNickname}!`);
+                    combatEngine.logger.add(`${SkillManager.icon('crushing_pressure')} **Crushing Pressure!** The abyss squeezes ${opponentNickname}!`);
                     if (atkLost > 0) combatEngine.logger.add(`${opponentNickname}'s ATK reduced by ${atkLost}`);
                     if (spdLost > 0) combatEngine.logger.add(`${opponentNickname}'s SPD reduced by ${spdLost}`);
                 }
@@ -940,7 +940,7 @@ module.exports = {
                     challengerPal.stats.spd = Math.floor(challengerPal.stats.spd * (1 - spdReduction));
                     const atkLost = originalAtk - challengerPal.stats.atk;
                     const spdLost = originalSpd - challengerPal.stats.spd;
-                    combatEngine.logger.add(`🌊 **Crushing Pressure!** The abyss squeezes ${challengerNickname}!`);
+                    combatEngine.logger.add(`${SkillManager.icon('crushing_pressure')} **Crushing Pressure!** The abyss squeezes ${challengerNickname}!`);
                     if (atkLost > 0) combatEngine.logger.add(`${challengerNickname}'s ATK reduced by ${atkLost} (${originalAtk} → ${challengerPal.stats.atk})`);
                     if (spdLost > 0) combatEngine.logger.add(`${challengerNickname}'s SPD reduced by ${spdLost} (${originalSpd} → ${challengerPal.stats.spd})`);
                 }
@@ -953,7 +953,7 @@ module.exports = {
                 opponentPal.stats.def = Math.floor(opponentPal.stats.def * (1 - defReduction));
                 const defLost = originalDef - opponentPal.stats.def;
                 if (defLost > 0) {
-                    combatEngine.logger.add(`😱 **Terror From Below!** ${challengerNickname} strikes fear into ${opponentNickname}, reducing their defenses!`);
+                    combatEngine.logger.add(`${SkillManager.icon('terror_from_below')} **Terror From Below!** ${challengerNickname} strikes fear into ${opponentNickname}, reducing their defenses!`);
                     combatEngine.logger.add(`${opponentNickname}'s DEF reduced by ${defLost} (${originalDef} → ${opponentPal.stats.def})`);
                 }
             }
@@ -964,7 +964,7 @@ module.exports = {
                 challengerPal.stats.def = Math.floor(challengerPal.stats.def * (1 - defReduction));
                 const defLost = originalDef - challengerPal.stats.def;
                 if (defLost > 0) {
-                    combatEngine.logger.add(`😱 **Terror From Below!** ${opponentNickname} strikes fear into ${challengerNickname}, reducing their defenses!`);
+                    combatEngine.logger.add(`${SkillManager.icon('terror_from_below')} **Terror From Below!** ${opponentNickname} strikes fear into ${challengerNickname}, reducing their defenses!`);
                     combatEngine.logger.add(`${challengerNickname}'s DEF reduced by ${defLost} (${originalDef} → ${challengerPal.stats.def})`);
                 }
             }
@@ -989,8 +989,8 @@ module.exports = {
                 if (!state.pendingRecoil) return { defenderHp, attackerHp };
                 if (state.recoilTurn !== null && currentTurn < state.recoilTurn) return { defenderHp, attackerHp };
                 if (state.storedDamage > 0) {
-                    combatEngine.logger.add(`⏰ **Temporal Reflection!** The attack reverses through time!`);
-                    combatEngine.logger.add(`💫 **${attackerLabel}** takes ${state.storedDamage} reflected damage!`);
+                    combatEngine.logger.add(`${SkillManager.icon('paradox_loop')} **Temporal Reflection!** The attack reverses through time!`);
+                    combatEngine.logger.add(`${SkillManager.icon('reflected_damage')} **${attackerLabel}** takes ${state.storedDamage} reflected damage!`);
                     attackerHp = Math.max(0, attackerHp - state.storedDamage);
                 }
                 state.storedDamage = 0;
@@ -1027,7 +1027,7 @@ module.exports = {
                 const preventedDamage = Math.max(0, simulation.damage);
                 const storedChunk = Math.floor(preventedDamage * defenderState.recoilPercent);
                 defenderState.storedDamage += storedChunk;
-                combatEngine.logger.add(`⏰ *Storing ${storedChunk} temporal damage (total ${defenderState.storedDamage}).*`);
+                combatEngine.logger.add(`${SkillManager.icon('paradox_loop')} *Storing ${storedChunk} temporal damage (total ${defenderState.storedDamage}).*`);
                 defenderState.active = false;
                 defenderState.pendingRecoil = true;
                 defenderState.recoilTurn = turn + 1;
@@ -1121,12 +1121,12 @@ module.exports = {
                         
                         if (attackResult.counterDamage > 0) {
                             firstAttacker.hp = Math.max(0, firstAttacker.hp - attackResult.counterDamage);
-                            combatEngine.logger.add(`💥 **Counter damage:** ${firstAttacker.name} takes **${attackResult.counterDamage}** damage!`);
+                            combatEngine.logger.add(`${SkillManager.icon('counter')} **Counter damage:** ${firstAttacker.name} takes **${attackResult.counterDamage}** damage!`);
                         }
 
                         if (attackResult.reflectedDamage > 0) {
                             firstAttacker.hp = Math.max(0, firstAttacker.hp - attackResult.reflectedDamage);
-                            combatEngine.logger.add(`⚡ **${firstAttacker.name} takes ${attackResult.reflectedDamage} reflected damage!**`);
+                            combatEngine.logger.add(`${SkillManager.icon('reflected_damage')} **${firstAttacker.name} takes ${attackResult.reflectedDamage} reflected damage!**`);
                         }
                         
                         if (attackResult.elementalStormTriggered || attackResult.abyssalDevourerTriggered) {
@@ -1143,7 +1143,8 @@ module.exports = {
                             if (reviveCheck) {
                                 secondAttacker.hp = Math.floor(secondAttacker.maxHp * 0.3);
                                 secondAttacker.reviveUsed = true;
-                                combatEngine.logger.add(`🌟 **${secondAttacker.name}** refuses to fall!`);
+                                const reviveIcon = secondAttacker.type === 'Undead' ? SkillManager.icon('undying_will') : SkillManager.icon('revive');
+                                combatEngine.logger.add(`${reviveIcon} **${secondAttacker.name}** refuses to fall!`);
                             } else {
                                 combatEngine.logger.add(`💀 **${secondAttacker.name}** has been defeated!`);
                                 
@@ -1184,12 +1185,12 @@ module.exports = {
                         
                         if (counterResult.counterDamage > 0) {
                             secondAttacker.hp = Math.max(0, secondAttacker.hp - counterResult.counterDamage);
-                            combatEngine.logger.add(`💥 **Counter damage:** ${secondAttacker.name} takes **${counterResult.counterDamage}** damage!`);
+                            combatEngine.logger.add(`${SkillManager.icon('counter')} **Counter damage:** ${secondAttacker.name} takes **${counterResult.counterDamage}** damage!`);
                         }
 
                         if (counterResult.reflectedDamage > 0) {
                             secondAttacker.hp = Math.max(0, secondAttacker.hp - counterResult.reflectedDamage);
-                            combatEngine.logger.add(`⚡ **${secondAttacker.name} takes ${counterResult.reflectedDamage} reflected damage!**`);
+                            combatEngine.logger.add(`${SkillManager.icon('reflected_damage')} **${secondAttacker.name} takes ${counterResult.reflectedDamage} reflected damage!**`);
                         }
                         
                         if (firstAttacker.hp <= 0) {
@@ -1197,7 +1198,8 @@ module.exports = {
                             if (reviveCheck) {
                                 firstAttacker.hp = Math.floor(firstAttacker.maxHp * 0.3);
                                 firstAttacker.reviveUsed = true;
-                                combatEngine.logger.add(`🌟 **${firstAttacker.name}** refuses to fall!`);
+                                const reviveIcon = firstAttacker.type === 'Undead' ? SkillManager.icon('undying_will') : SkillManager.icon('revive');
+                                combatEngine.logger.add(`${reviveIcon} **${firstAttacker.name}** refuses to fall!`);
                             } else {
                                 combatEngine.logger.add(`💀 **${firstAttacker.name}** has been defeated!`);
                                 
@@ -1304,10 +1306,11 @@ module.exports = {
 
     async processAreaDamage(areaAttackData, challenger, opponent, challengerActiveIndex, opponentActiveIndex) {
         const areaLogs = [];
+        let areaATK = areaAttackData.attackerType === 'Elemental' ? SkillManager.icon('elemental_storm') : SkillManager.icon('abyssal_devourer');
         
         if (!areaAttackData || areaAttackData.damage <= 0) return areaLogs;
 
-        areaLogs.push(`🌪️ **Area Attack Effect!**`);
+        areaLogs.push(`${areaATK} **Area Attack Effect!**`);
         areaLogs.push(`**${areaAttackData.attackerUser.displayName}**'s attack affects waiting pets!`);
 
         try {
@@ -1338,7 +1341,7 @@ module.exports = {
                 if (enhancedWaitingPet.skillBonuses?.aoeProtect && enhancedWaitingPet.skillBonuses?.barrierAbsorb) {
                     const absorbedAmount = Math.floor(actualDamage * enhancedWaitingPet.skillBonuses.barrierAbsorb);
                     actualDamage -= absorbedAmount;
-                    areaLogs.push(`🛡️ **${waitingPet.nickname}**'s Celestial Barrier absorbs ${absorbedAmount} area damage!`);
+                    areaLogs.push(`${SkillManager.icon('celestial_barrier')} **${waitingPet.nickname}**'s Celestial Barrier absorbs ${absorbedAmount} area damage!`);
                 }
 
                 actualDamage = Math.max(1, actualDamage);

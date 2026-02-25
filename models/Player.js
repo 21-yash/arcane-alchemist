@@ -68,6 +68,9 @@ const PlayerSchema = new mongoose.Schema({
     // Badges - e.g. ['beta_user', 'top_voter', 'supporter']
     badges: { type: [String], default: [] },
 
+    // Tutorial progress: 0 = not started, 1-7 = current step, -1 = completed/skipped
+    tutorialStep: { type: Number, default: 0 },
+
 }, { timestamps: true });
 
 module.exports = mongoose.model('Player', PlayerSchema);

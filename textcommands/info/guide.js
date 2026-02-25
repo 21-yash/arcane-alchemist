@@ -367,7 +367,7 @@ Pals are mystical creatures that fight alongside you in dungeons and battles. Th
 module.exports = {
     name: 'guide',
     description: 'Comprehensive guide to game mechanics and features.',
-    aliases: ['tutorial', 'guides', 'help-guide'],
+    aliases: ['guides', 'help-guide'],
     usage: '[topic]',
     
     async execute(message, args, client, prefix) {

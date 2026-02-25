@@ -15,18 +15,6 @@ module.exports = {
         ]
     },
 
-    auto_brewer: {
-        name: 'Auto-Brewer',
-        description: 'Automatically brews potions from stored ingredients',
-        type: 'automation',
-        maxLevel: 3,
-        costs: [5000, 15000, 35000],
-        effects: [
-            { level: 1, autoBrew: { capacity: 5, interval: 60 } }, // 5 potions per hour
-            { level: 2, autoBrew: { capacity: 10, interval: 45 } },
-            { level: 3, autoBrew: { capacity: 20, interval: 30 } }
-        ]
-    },
 
     // Incubation Upgrades
     temperature_control: {
@@ -64,10 +52,10 @@ module.exports = {
         costs: [3000, 8000, 18000, 35000, 60000],
         effects: [
             { level: 1, researchGeneration: { points: 1, interval: 120 } }, 
-            { level: 2, researchGeneration: { points: 2, interval: 100 } },
-            { level: 3, researchGeneration: { points: 3, interval: 80 } },
-            { level: 4, researchGeneration: { points: 5, interval: 60 } },
-            { level: 5, researchGeneration: { points: 8, interval: 45 } }
+            { level: 2, researchGeneration: { points: 2, interval: 110 } },
+            { level: 3, researchGeneration: { points: 3, interval: 100 } },
+            { level: 4, researchGeneration: { points: 5, interval: 100 } },
+            { level: 5, researchGeneration: { points: 8, interval: 100 } }
         ]
     },
 
@@ -202,11 +190,11 @@ module.exports = {
         maxLevel: 5,
         costs: [2000, 6000, 15000, 35000, 75000],
         effects: [
-            { level: 1, maxStaminaBonus: 20 },
-            { level: 2, maxStaminaBonus: 40 },
-            { level: 3, maxStaminaBonus: 60 },
-            { level: 4, maxStaminaBonus: 80 },
-            { level: 5, maxStaminaBonus: 100 }
+            { level: 1, maxStaminaBonus: 40 },
+            { level: 2, maxStaminaBonus: 60 },
+            { level: 3, maxStaminaBonus: 80 },
+            { level: 4, maxStaminaBonus: 120 },
+            { level: 5, maxStaminaBonus: 200 }
         ]
     },
 
@@ -310,20 +298,6 @@ module.exports = {
             { level: 2, sellPriceBonus: 0.2 },
             { level: 3, sellPriceBonus: 0.3 },
             { level: 4, sellPriceBonus: 0.4 }
-        ]
-    },
-
-    // Quality of Life Upgrades
-    quick_access_panel: {
-        name: 'Quick Access Panel',
-        description: 'Reduces cooldowns on common actions',
-        type: 'utility',
-        maxLevel: 3,
-        costs: [6000, 20000, 50000],
-        effects: [
-            { level: 1, globalCooldownReduction: 0.1 },
-            { level: 2, globalCooldownReduction: 0.2 },
-            { level: 3, globalCooldownReduction: 0.3 }
         ]
     },
 

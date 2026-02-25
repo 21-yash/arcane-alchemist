@@ -3,6 +3,9 @@ const { checkBlacklist, checkUserPermissions, checkBotPermissions, isCommandDisa
 const { EmbedBuilder } = require('discord.js');
 const { PermissionFlagsBits } = require('discord.js');
 
+// Track users who have already received the tutorial nudge this session
+const tutorialNudged = new Set();
+
 module.exports = {
     name: 'messageCreate',
     async execute(message, client) {
@@ -63,6 +66,25 @@ module.exports = {
 
             // Execute command
             await command.execute(message, args, client, prefix);
+
+            // --- Tutorial Nudge (one-time per session) ---
+            const skipCommands = ['start', 'tutorial', 'tut', 'help', 'h'];
+            const resolvedName = command.name || commandName;
+            if (!skipCommands.includes(resolvedName) && !tutorialNudged.has(message.author.id)) {
+                try {
+                    const Player = require('../models/Player');
+                    const player = await Player.findOne({ userId: message.author.id });
+                    if (player && player.tutorialStep !== undefined && player.tutorialStep >= 0 && player.tutorialStep !== -1) {
+                        tutorialNudged.add(message.author.id);
+                        const nudgeEmbed = new EmbedBuilder()
+                            .setColor('#9B59B6')
+                            .setDescription(`🧙‍♂️ **Psst!** You haven't finished the tutorial yet. Use \`${prefix}tutorial\` to learn the basics and earn bonus rewards!`);
+                        await message.channel.send({ embeds: [nudgeEmbed] });
+                    }
+                } catch (nudgeErr) {
+                    // Silently fail — nudge is non-critical
+                }
+            }
 
         } catch (error) {
             await client.handleMessageError(message, error, commandName);

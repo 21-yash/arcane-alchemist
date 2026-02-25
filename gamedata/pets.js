@@ -157,7 +157,7 @@ module.exports = {
         statGrowth: { hp: 10, atk: 4, def: 4, spd: 6, luck: 4 }, // Total: 28
         evolution: { level: 18, evolvesTo: 'star_phoenix' },
         playstyle: 'Oracle',
-        pic: 'https://cdn.discordapp.com/attachments/920231858204200961/1412757034260103272/image-removebg-preview_6.png?ex=68b97404&is=68b82284&hm=dc0c436bc42d608f0204f839faa8ab85bfcbd2571e143f0e50722596540be3ab&'
+        pic: 'https://cdn.discordapp.com/attachments/960596189621940317/1473315882284355797/star_phoenix.png?ex=6995c3d7&is=69947257&hm=7d2c74cfeae9740ba7dfc1b608ec59734e06111f2f296efd3ce15455b06ca15e&'
     },
     'star_phoenix': {
         name: 'Star Phoenix',
