@@ -12,6 +12,7 @@ module.exports = {
     description: 'View your or another player\'s alchemist profile.',
     usage: '[@user]',
     aliases: ['p', 'bal'],
+    cooldown: 3,
     async execute(message, args, client, prefix) {
         try {
             // Get target member (self or mentioned user)

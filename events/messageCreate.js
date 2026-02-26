@@ -2,6 +2,7 @@ const config = require('../config/config.json');
 const { checkBlacklist, checkUserPermissions, checkBotPermissions, isCommandDisabled } = require('../utils/permissions');
 const { EmbedBuilder } = require('discord.js');
 const { PermissionFlagsBits } = require('discord.js');
+const CooldownManager = require('../utils/cooldown');
 
 // Track users who have already received the tutorial nudge this session
 const tutorialNudged = new Set();
@@ -64,12 +65,32 @@ module.exports = {
                 return;
             }
 
+            // --- Cooldown Check (owner bypasses) ---
+            const resolvedName = command.name || commandName;
+            const cooldownSeconds = command.cooldown;
+            const hasCooldown = cooldownSeconds || command.customCooldown;
+
+            if (hasCooldown && message.author.id !== config.ownerId) {
+                const { onCooldown, remaining } = CooldownManager.check(message.author.id, resolvedName);
+                if (onCooldown) {
+                    const cooldownEmbed = new EmbedBuilder()
+                        .setColor('#FF6B6B')
+                        .setDescription(`⏳ **Slow down!** You can use \`${prefix}${resolvedName}\` again in **${remaining}s**.`);
+                    return message.reply({ embeds: [cooldownEmbed] });
+                }
+            }
+
             // Execute command
             await command.execute(message, args, client, prefix);
 
+            // --- Set Cooldown after successful execution ---
+            // Commands with customCooldown handle CooldownManager.set() themselves
+            if (cooldownSeconds && !command.customCooldown && message.author.id !== config.ownerId) {
+                CooldownManager.set(message.author.id, resolvedName, cooldownSeconds);
+            }
+
             // --- Tutorial Nudge (one-time per session) ---
             const skipCommands = ['start', 'tutorial', 'tut', 'help', 'h'];
-            const resolvedName = command.name || commandName;
             if (!skipCommands.includes(resolvedName) && !tutorialNudged.has(message.author.id)) {
                 try {
                     const Player = require('../models/Player');

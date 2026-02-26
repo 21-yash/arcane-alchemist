@@ -11,6 +11,7 @@ const LabManager = require('../../utils/labManager');
 module.exports = {
     name: "breed",
     description: "Manage your breeding pen to breed pets and create eggs.",
+    cooldown: 15,
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);

@@ -323,6 +323,7 @@ function seedRandom(seed) {
 module.exports = {
     name: "shop",
     description: "Visit the shop to spend your Arcane Dust on ingredients and Gold on recipe scrolls.",
+    cooldown: 5,
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);

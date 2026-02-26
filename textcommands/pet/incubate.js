@@ -15,6 +15,7 @@ module.exports = {
     name: "incubate",
     description: "Manage your alchemical incubator to hatch eggs into pets.",
     aliases: ['incubator', 'hatch'],
+    cooldown: 10,
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);

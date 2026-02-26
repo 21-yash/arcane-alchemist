@@ -321,6 +321,7 @@ module.exports = {
     name: "dungeon",
     description: "Embark on an expedition into a dangerous dungeon with one of your Pals.",
     usage: "[dungeon name] | quick",
+    cooldown: 30,
     
     async execute(message, args, client, prefix) {
         // Check for active session

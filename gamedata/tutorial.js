@@ -139,7 +139,7 @@ const steps = {
             `*"Remember — the greatest alchemists didn't master everything in a day. Take your time, experiment, and most importantly... enjoy the journey."*\n\n` +
             `🎉 **Tutorial Complete!** You're ready to explore the world of Arcane Alchemist!`,
         fields: [
-            { name: '🎁 Tutorial Reward', value: 'You\'ve earned a bonus of **50 Gold** and **25 Stamina** for completing the tutorial!', inline: false },
+            { name: '🎁 Tutorial Reward', value: 'You\'ve earned a bonus of **100 Gold**, **50 Stamina**, and **100 XP** for completing the tutorial!', inline: false },
             { name: '📢 Join the Community', value: 'Use `{prefix}vote` to support the bot and earn awesome rewards!', inline: false }
         ],
         footer: 'Step 7 of 7 • Tutorial Complete!'
@@ -150,8 +150,9 @@ const TOTAL_STEPS = Object.keys(steps).length;
 
 // Reward for completing the full tutorial
 const COMPLETION_REWARDS = {
-    gold: 50,
-    stamina: 25
+    gold: 100,
+    stamina: 50,
+    xp: 100
 };
 
 module.exports = {

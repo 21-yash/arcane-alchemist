@@ -352,6 +352,7 @@ function getPlayerIngredients(player) {
 module.exports = {
     name: "brew",
     description: "Brew potions and craft items in the alchemist's cauldron.",
+    cooldown: 10,
     async execute(message, args, client, prefix) {
         try {
             // Check if user already has an active brewing session

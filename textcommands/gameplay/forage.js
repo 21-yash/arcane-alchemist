@@ -6,7 +6,7 @@ const { restoreStamina } = require('../../utils/stamina');
 const GameData = require('../../utils/gameData');
 const config = require('../../config/config.json');
 const { grantPlayerXp } = require('../../utils/leveling');
-const cooldowns = new Map();
+const CooldownManager = require('../../utils/cooldown');
 const { updateQuestProgress } = require('../../utils/questSystem');
 const LabManager = require('../../utils/labManager');
 
@@ -229,21 +229,9 @@ module.exports = {
     description: 'Forage for alchemical ingredients in a specific biome.',
     usage: '[biome name]',
     aliases: ['gather'],
+    customCooldown: true,
     async execute(message, args, client, prefix) {
 
-        if (cooldowns.has(message.author.id)) {
-            const expiresAt = cooldowns.get(message.author.id);
-            const remainingTime = (expiresAt - Date.now()) / 1000; 
-
-            return message.reply({
-                embeds: [
-                    createWarningEmbed(
-                        `${config.emojis.loading} Cooldown`,
-                        `You need to wait another ${remainingTime.toFixed(1)} seconds.`
-                    )
-                ]
-            });
-        }
 
         try {
             let player = await Player.findOne({ userId: message.author.id });
@@ -525,15 +513,11 @@ module.exports = {
                 });
             }
 
-            const baseCooldown = 10000;
+            // Set cooldown via CooldownManager with lab reduction applied
+            const baseCooldown = 12; // seconds
             const cooldownReduction = Math.min((labEffects?.forageCooldownReduction || 0) + (labEffects?.globalCooldownReduction || 0), 0.9);
-            const cooldownDuration = baseCooldown * (1 - cooldownReduction);
-            const expirationTime = Date.now() + cooldownDuration;
-            cooldowns.set(message.author.id, expirationTime);
-
-            setTimeout(() => {
-                cooldowns.delete(message.author.id);
-            }, cooldownDuration);
+            const adjustedCooldown = Math.max(1, Math.round(baseCooldown * (1 - cooldownReduction)));
+            CooldownManager.set(message.author.id, 'forage', adjustedCooldown);
 
         } catch (error) {
             console.error('Forage command error:', error);

@@ -54,6 +54,10 @@ require('./handlers/errorHandler')(client);
 initializeGameEventListeners(client);
 require('./utils/questScheduler');
 require('./webhookListener').startWebhookListener(client);
+
+// Periodic cooldown cleanup (every 5 minutes)
+const CooldownManager = require('./utils/cooldown');
+setInterval(() => CooldownManager.cleanup(), 5 * 60 * 1000);
 // Connect to MongoDB
 require('./config/database');
 

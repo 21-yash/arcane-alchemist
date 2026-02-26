@@ -75,6 +75,7 @@ module.exports = {
     name: 'expedition',
     description: 'Send your Pals on expeditions to gather resources and gain experience.',
     aliases: ['exp', 'explore'],
+    cooldown: 10,
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);

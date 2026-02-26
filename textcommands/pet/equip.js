@@ -9,6 +9,7 @@ module.exports = {
     description: 'Equip your Pal with gear to boost its stats.',
     aliases: ['gear', 'equipitem'],
     usage: '<pal_id> <item_name>',
+    cooldown: 5,
     async execute(message, args, client, prefix) {
         try {
             // Validate player

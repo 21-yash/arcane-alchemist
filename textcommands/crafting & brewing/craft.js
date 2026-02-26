@@ -334,6 +334,7 @@ module.exports = {
     name: "craft",
     description: "Craft equipment and items at the workshop.",
     aliases: ['workbench', 'workshop'],
+    cooldown: 10,
     async execute(message, args, client, prefix) {
         try {
             // Check if user already has an active crafting session

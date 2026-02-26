@@ -424,6 +424,7 @@ module.exports = {
     description: 'View and manage your laboratory upgrades.',
     usage: '[upgrade <id>]',
     aliases: ['laboratory'],
+    cooldown: 5,
     async execute(message, args, client, prefix) {
         const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
         if (!playerResult.success) {

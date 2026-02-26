@@ -2,6 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentTyp
 const Player = require('../../models/Player');
 const { createErrorEmbed, createCustomEmbed } = require('../../utils/embed');
 const CommandHelpers = require('../../utils/commandHelpers');
+const { grantPlayerXp } = require('../../utils/leveling');
 const { steps, TOTAL_STEPS, TUTORIAL_COLOR, COMPLETION_REWARDS } = require('../../gamedata/tutorial');
 
 /**
@@ -143,12 +144,16 @@ module.exports = {
                         player.stamina = Math.min(player.stamina + COMPLETION_REWARDS.stamina, player.maxStamina);
                         await player.save();
 
+                        // Grant XP through the leveling system (handles level-ups automatically)
+                        await grantPlayerXp(client, message, message.author.id, COMPLETION_REWARDS.xp);
+
                         const completeEmbed = createCustomEmbed(
                             '🎉 Tutorial Complete!',
                             `Congratulations, **${message.author.displayName}**! You've completed the Arcane Alchemist tutorial.\n\n` +
                             `**Rewards earned:**\n` +
                             `> 💰 **+${COMPLETION_REWARDS.gold} Gold**\n` +
-                            `> ⚡ **+${COMPLETION_REWARDS.stamina} Stamina**\n\n` +
+                            `> ⚡ **+${COMPLETION_REWARDS.stamina} Stamina**\n` +
+                            `> 📊 **+${COMPLETION_REWARDS.xp} XP**\n\n` +
                             `*Eldric nods approvingly.* "Go forth and make your mark upon this world, alchemist!"\n\n` +
                             `Use \`${prefix}help\` to see all available commands. Good luck! ✨`,
                             '#22C55E'

@@ -261,6 +261,7 @@ module.exports = {
     description: "Challenge another player to a Pal battle!",
     usage: "<@user> | add <pet_id>",
     aliases: ["fight", "duel", "pvp"],
+    cooldown: 20,
     
     async execute(message, args, client, prefix) {
         try {

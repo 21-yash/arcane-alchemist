@@ -230,6 +230,7 @@ module.exports = {
     description: 'View your or another player\'s collection of Pals.',
     usage: '[@user] [--rarity <rarity>] [--type <type>] [--lvl] OR info <pal_id>',
     aliases: ['pals', 'collection', 'pal', 'pets'],
+    cooldown: 3,
     async execute(message, args, client, prefix) {
         try {
             // --- Subcommand: View specific Pal info ---

@@ -11,6 +11,7 @@ module.exports = {
     description: 'View and manage your quests and faction reputation.',
     usage: 'list [type] | info <quest_id> | start <quest_id> | abandon <quest_id> | rep',
     aliases: ['q', 'quests'],
+    cooldown: 5,
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayerWithQuests(message.author.id, prefix);

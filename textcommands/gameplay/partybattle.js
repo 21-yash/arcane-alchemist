@@ -171,6 +171,7 @@ module.exports = {
     description: "Challenge another player to a 3v3 Pal battle with true PvP mechanics!",
     usage: "<@user> | add <pet_id> [pet_id2] [pet_id3] | remove <pet_id> | clear",
     aliases: ["pb", "3v3", "partyfight"],
+    cooldown: 20,
     
     async execute(message, args, client, prefix) {
         try {

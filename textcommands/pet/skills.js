@@ -10,6 +10,7 @@ module.exports = {
     name: 'skills',
     description: 'Manage your Pal\'s skill tree and unlock new abilities.',
     aliases: ['skill', 'tree'],
+    cooldown: 5,
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);

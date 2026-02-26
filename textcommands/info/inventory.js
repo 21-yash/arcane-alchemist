@@ -11,6 +11,7 @@ module.exports = {
     description: 'View your alchemical ingredients, potions, and equipment.',
     usage: '[@user] [--page=number] [--type=type] [--rarity=rarity]',
     aliases: ['inv', 'bag'],
+    cooldown: 3,
     async execute(message, args, client, prefix) {
         try {
             const user = message.author;
