@@ -658,7 +658,7 @@ module.exports = {
 
                 // Emit events
                 client.emit("itemCrafted", message.author.id, recipe.result.itemId);
-                await updateQuestProgress(message.author.id, 'craft_items', 1);
+                await updateQuestProgress(message.author.id, 'craft_items', 1, message);
 
                 const resultItemData = CommandHelpers.getItemData(recipe.result.itemId);
                 const successMsg = `You successfully crafted **${recipe.result.quantity}x ${resultItemData.name}**!`;

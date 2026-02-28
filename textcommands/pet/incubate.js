@@ -159,7 +159,7 @@ module.exports = {
         player.palCounter = (player.palCounter || 0) + 1;
         await player.save();
 
-        await updateQuestProgress(message.author.id, 'hatch_pals', 1);
+        await updateQuestProgress(message.author.id, 'hatch_pals', 1, message);
         client.emit('eggHatch', message.author.id);
 
         const slotLabel = getSlotLabel(targetSlot);

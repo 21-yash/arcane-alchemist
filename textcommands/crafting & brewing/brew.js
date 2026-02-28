@@ -617,10 +617,17 @@ module.exports = {
                             successRate
                         );
 
-                        await i.update({
-                            embeds: [brewResult.embed],
-                            components: []
-                        });
+                        try {
+                            await i.update({
+                                embeds: [brewResult.embed],
+                                components: []
+                            });
+                        } catch (err) {
+                            // Interaction expired — fallback to editing the message directly
+                            if (err.code === 10062) {
+                                await reply.edit({ embeds: [brewResult.embed], components: [] }).catch(() => {});
+                            }
+                        }
 
                         activeBrewingSessions.delete(message.author.id);
                         messageCollector.stop();
@@ -765,7 +772,7 @@ module.exports = {
                 // Emit events for successful brews
                 for (let i = 0; i < successfulBrews; i++) {
                     client.emit("potionBrewed", message.author.id);
-                    await updateQuestProgress(message.author.id, 'brew_potions', 1);
+                    await updateQuestProgress(message.author.id, 'brew_potions', 1, message);
                 }
             }
 

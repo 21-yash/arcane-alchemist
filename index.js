@@ -52,7 +52,6 @@ require('./handlers/eventHandler')(client);
 require('./handlers/commandHandler')(client);
 require('./handlers/errorHandler')(client);
 initializeGameEventListeners(client);
-require('./utils/questScheduler');
 require('./webhookListener').startWebhookListener(client);
 
 // Periodic cooldown cleanup (every 5 minutes)
@@ -74,6 +73,8 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
+    // Silently ignore expired Discord interactions (Unknown interaction)
+    if (reason?.code === 10062) return;
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 

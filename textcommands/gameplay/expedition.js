@@ -7,6 +7,7 @@ const GameData = require('../../utils/gameData');
 const CommandHelpers = require('../../utils/commandHelpers');
 const LabManager = require('../../utils/labManager');
 const { updateQuestProgress } = require('../../utils/questSystem');
+const { grantPlayerXp } = require('../../utils/leveling');
 
 const expeditionTypes = {
     resource_gathering: {
@@ -387,11 +388,16 @@ module.exports = {
 
         if (successfulExpeditions > 0) {
             client.emit('expeditionComplete', message.author.id, successfulExpeditions);
-            await updateQuestProgress(message.author.id, 'complete_expeditions', successfulExpeditions);
+            await updateQuestProgress(message.author.id, 'complete_expeditions', successfulExpeditions, message);
+        }
+
+        // Grant player XP from expeditions
+        if (totalRewards.xp > 0) {
+            await grantPlayerXp(client, message, message.author.id, totalRewards.xp);
         }
 
         // Show results
-        let rewardSummary = `**Total Rewards:**\n💰 ${totalRewards.gold} Gold\n`;
+        let rewardSummary = `**Total Rewards:**\n⭐ ${totalRewards.xp} XP\n💰 ${totalRewards.gold} Gold\n`;
         if (Object.keys(totalRewards.items).length > 0) {
             rewardSummary += '**Items:**\n';
             for (const [itemId, quantity] of Object.entries(totalRewards.items)) {

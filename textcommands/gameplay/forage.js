@@ -406,9 +406,9 @@ module.exports = {
             grantPlayerXp(client, message, message.author.id, baseXp, { labEffects });
             
             // Update quest progress
-            await updateQuestProgress(message.author.id, 'forage_times', 1);
+            await updateQuestProgress(message.author.id, 'forage_times', 1, message);
             if (foundLoot.length > 0) {
-                await updateQuestProgress(message.author.id, 'collect_items', foundLoot.length);
+                await updateQuestProgress(message.author.id, 'collect_items', foundLoot.length, message);
             }
 
             // Handle pet encounters

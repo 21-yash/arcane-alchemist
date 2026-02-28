@@ -2,7 +2,7 @@ const Player = require('../models/Player');
 const Pet = require('../models/Pet');
 const QuestProgress = require('../models/Quest');
 const { createErrorEmbed, createSuccessEmbed, createWarningEmbed, createInfoEmbed } = require('./embed');
-const { initializeQuestProgress } = require('./questSystem');
+const { getQuestProgress } = require('./questSystem');
 const GameData = require('./gameData');
 const { getMember } = require('./functions');
 const config = require('../config/config.json');
@@ -48,7 +48,7 @@ class CommandHelpers {
     }
 
     /**
-     * Validate player and initialize quest progress
+     * Validate player and get quest progress (auto-creates & resets as needed)
      * @param {string} userId - Discord user ID
      * @param {string} prefix - Bot command prefix
      * @returns {Promise<Object>} Validation result with player and quest data
@@ -60,10 +60,7 @@ class CommandHelpers {
                 return playerResult;
             }
 
-            let questProgress = await QuestProgress.findOne({ playerId: userId });
-            if (!questProgress) {
-                questProgress = await initializeQuestProgress(userId);
-            }
+            const questProgress = await getQuestProgress(userId);
 
             return {
                 success: true,

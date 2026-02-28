@@ -218,7 +218,7 @@ module.exports = {
         player.stats.eggsProduced = (player.stats.eggsProduced || 0) + 1;
         await player.save();
 
-        await updateQuestProgress(message.author.id, 'breed_pals', 1);
+        await updateQuestProgress(message.author.id, 'breed_pals', 1, message);
 
         // Emit achievement event
         client.emit('palsBred', message.author.id);

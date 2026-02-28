@@ -25,6 +25,7 @@ const {
     COMBAT_CONFIG
 } = require("../../utils/combat");
 const { StatusEffectManager } = require("../../utils/statusEffects");
+const { updateQuestProgress } = require("../../utils/questSystem");
 
 // ─── Visual Helpers ───────────────────────────────────────────────
 function createHpBar(current, max, length = 10) {
@@ -1157,6 +1158,11 @@ module.exports = {
                     .setStyle(ButtonStyle.Secondary)
             );
             await battleMsg.edit({ embeds: [resultEmbed], components: [logButton] });
+
+            // Track quest progress for the winner
+            if (!isDraw && result.winnerId) {
+                await updateQuestProgress(result.winnerId, 'win_battles', 1, message);
+            }
 
             // Collector for battle log button
             const collector = battleMsg.createMessageComponentCollector({ time: 120000 });

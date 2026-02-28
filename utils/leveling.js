@@ -11,10 +11,10 @@ const LabManager = require('./labManager');
  * @returns {number} The total XP needed for that level.
  */
 function calculateXpForNextLevel(level) {
-    // New Formula: 100 * (level ^ 1.5)
-    // This makes leveling up progressively harder.
+    // Gentler scaling: 50 * (level ^ 1.3)
+    // Still progressively harder, but not as punishing at high levels
     const baseXP = 50;
-    const exponent = 1.5;
+    const exponent = 1.3;
     return Math.floor(baseXP * Math.pow(level, exponent));
 }
 

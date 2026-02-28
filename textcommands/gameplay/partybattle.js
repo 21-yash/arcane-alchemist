@@ -30,6 +30,7 @@ const {
     Utils
 } = require("../../utils/combat");
 const { StatusEffectManager } = require("../../utils/statusEffects");
+const { updateQuestProgress } = require("../../utils/questSystem");
 
 // Global party battle sessions
 const partyBattleSessions = new Map();
@@ -883,6 +884,9 @@ module.exports = {
                 overallWinner, challengerWon, remainingPets,
                 challenger, opponent, challengerActiveIndex, opponentActiveIndex
             );
+
+            // Track quest progress for the winner
+            await updateQuestProgress(overallWinner.id, 'win_battles', 1, message);
 
         } catch (error) {
             console.error("Error in enhanced party battle:", error);

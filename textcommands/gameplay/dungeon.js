@@ -22,7 +22,7 @@ const {
     Utils,
     StatManager
 } = require("../../utils/combat");
-const { grantPalXp } = require("../../utils/leveling");
+const { grantPalXp, grantPlayerXp } = require("../../utils/leveling");
 const { restorePetHp } = require("../../utils/stamina");
 const LabManager = require('../../utils/labManager');
 const { updateQuestProgress } = require('../../utils/questSystem');
@@ -822,8 +822,12 @@ async function finalizeDungeon(
             console.error('Failed to update player rewards after multiple retries');
         }
 
-        // Grant XP and check for level up
+        // Grant Pal XP and check for level up
         const levelUpInfo = await grantPalXp(client, interaction.message, pal, rewards.xp);
+
+        // Grant Player XP based on dungeon difficulty × floors cleared
+        const playerXp = dungeon.staminaCost * floorsCleared;
+        await grantPlayerXp(client, interaction.message, interaction.user.id, playerXp);
 
         // Update pal status based on final HP
         if (wasDefeated) {
@@ -845,10 +849,15 @@ async function finalizeDungeon(
         const summaryEmbed = createSuccessEmbed("Expedition Summary", finalSummary);
         await interaction.channel.send({ embeds: [summaryEmbed] });
 
-        // Emit dungeon clear event if completed
+        // Track dungeon floor clears (always, even partial runs)
+        if (floorsCleared > 0) {
+            await updateQuestProgress(interaction.user.id, 'clear_dungeon_floors', floorsCleared, interaction);
+        }
+
+        // Emit dungeon clear event if fully completed
         if (!wasDefeated && floorsCleared === dungeon.floors) {
             client.emit("dungeonClear", interaction.user.id);
-            await updateQuestProgress(interaction.user.id, 'clear_dungeons', 1);
+            await updateQuestProgress(interaction.user.id, 'clear_dungeons', 1, interaction);
         }
     } catch (error) {
         console.error("Error in finalizeDungeon:", error);

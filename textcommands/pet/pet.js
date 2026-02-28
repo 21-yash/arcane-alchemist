@@ -1,4 +1,4 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, StringSelectMenuBuilder, ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, MessageFlags, SectionBuilder } = require('discord.js');
 const Player = require('../../models/Player');
 const Pet = require('../../models/Pet');
 const { createErrorEmbed, createCustomEmbed, createInfoEmbed } = require('../../utils/embed');
@@ -9,9 +9,21 @@ const { restorePetHp } = require('../../utils/stamina');
 const CommandHelpers = require('../../utils/commandHelpers');
 const LabManager = require('../../utils/labManager');
 
-const PALS_PER_PAGE = 10;
+const PALS_PER_PAGE = 12;
+const PET_COLOR = 0x3498DB;
 
-// Import the cleanup function from use.js (or define it here)
+const TYPE_META = {
+    beast:      { label: 'Beast',      emoji: '🐾', sort: 1 },
+    elemental:  { label: 'Elemental',  emoji: '🌋', sort: 2 },
+    mystic:     { label: 'Mystic',     emoji: '🔮', sort: 3 },
+    undead:     { label: 'Undead',     emoji: '💀', sort: 4 },
+    mechanical: { label: 'Mechanical', emoji: '⚙️', sort: 5 },
+    abyssal:    { label: 'Abyssal',    emoji: '🌑', sort: 6 },
+    aeonic:     { label: 'Aeonic',     emoji: '⏳', sort: 7 }
+};
+
+// ── Shared Helpers ──────────────────────────────────────────────────
+
 function cleanExpiredPotionEffects(pal) {
     if (!pal.potionEffects || pal.potionEffects.length === 0) return false;
     
@@ -83,7 +95,6 @@ function cleanExpiredPotionEffects(pal) {
     return expiredEffects.length > 0;
 }
 
-// Helper function for the detailed Pal view embed
 const generatePalDetailEmbed = (pal, member) => {
     const basePalInfo = GameData.getPet(pal.basePetId);
     
@@ -225,10 +236,215 @@ const generatePalDetailEmbed = (pal, member) => {
     );
 };
 
+// ── Components V2 List Builders ─────────────────────────────────────
+
+function sortPals(pals, sortBy) {
+    const rarityOrder = { legendary: 1, epic: 2, rare: 3, uncommon: 4, common: 5 };
+    const withKeys = pals.map(pal => {
+        const base = GameData.getPet(pal.basePetId);
+        return {
+            pal,
+            level: pal.level,
+            id: pal.shortId,
+            raritySort: base ? (rarityOrder[base.rarity?.toLowerCase()] || 99) : 999
+        };
+    });
+
+    withKeys.sort((a, b) => {
+        if (sortBy === 'lvl') {
+            if (a.level !== b.level) return b.level - a.level; // Highest level first
+            if (a.raritySort !== b.raritySort) return a.raritySort - b.raritySort;
+            return a.id - b.id;
+        } else if (sortBy === 'rarity') {
+            if (a.raritySort !== b.raritySort) return a.raritySort - b.raritySort; // Highest rarity first
+            if (a.level !== b.level) return b.level - a.level;
+            return a.id - b.id;
+        } else {
+            // Default: sort by ID
+            return a.id - b.id;
+        }
+    });
+
+    return withKeys.map(w => w.pal);
+}
+
+function applyFilters(pals, filterValue) {
+    if (!filterValue || filterValue === 'all') return pals;
+    
+    if (filterValue.startsWith('type:')) {
+        const type = filterValue.split(':')[1];
+        return pals.filter(pal => {
+            const item = GameData.getPet(pal.basePetId);
+            return item && item.type?.toLowerCase() === type;
+        });
+    } else if (filterValue.startsWith('rarity:')) {
+        const rarity = filterValue.split(':')[1];
+        return pals.filter(pal => {
+            const item = GameData.getPet(pal.basePetId);
+            return item && item.rarity?.toLowerCase() === rarity;
+        });
+    }
+    return pals;
+}
+
+function buildPetListContainer(member, allPals, sortedPals, page, totalPages, activeFilter, sortBy) {
+    const container = new ContainerBuilder()
+        .setAccentColor(PET_COLOR);
+
+    // ── Header Area ──
+    let highestLevel = 0;
+    allPals.forEach(p => { if (p.level > highestLevel) highestLevel = p.level });
+    
+    let header = `## 🐾 ${member.displayName}'s Pals\n`;
+    let sortName = sortBy === 'id' ? 'ID' : (sortBy === 'lvl' ? 'Level' : 'Rarity');
+    header += `Pals Owned: \`${allPals.length}\`  •  Sorting by: \`${sortName}\``;
+
+    const sortEmoji = sortBy === 'id' ? '🔢' : (sortBy === 'lvl' ? '⭐' : '🌟');
+
+    const sortBtn = new ButtonBuilder()
+        .setCustomId('pet_sort')
+        .setEmoji(sortEmoji)
+        .setStyle(ButtonStyle.Secondary);
+
+    const headerSection = new SectionBuilder()
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(header))
+        .setButtonAccessory(sortBtn);
+
+    container.addSectionComponents(headerSection);
+
+    container.addSeparatorComponents(
+        new SeparatorBuilder().setDivider(true)
+    );
+
+    // ── Filter Select Menu ──
+    const filterSelect = new StringSelectMenuBuilder()
+        .setCustomId('pet_filter')
+        .setPlaceholder('🔍 Filter by Pal type or rarity...');
+
+    filterSelect.addOptions({
+        label: 'All Pals',
+        description: `Show all ${allPals.length} Pals`,
+        value: 'all',
+        emoji: '📋',
+        default: activeFilter === 'all'
+    });
+
+    const ownedTypes = new Set();
+    const ownedRarities = new Set();
+    allPals.forEach(pal => {
+        const base = GameData.getPet(pal.basePetId);
+        if (base) {
+            if (base.type) ownedTypes.add(base.type.toLowerCase());
+            if (base.rarity) ownedRarities.add(base.rarity.toLowerCase());
+        }
+    });
+
+    const RARITY_META = {
+        common: { label: 'Common', emoji: config.emojis.Common },
+        uncommon: { label: 'Uncommon', emoji: config.emojis.Uncommon },
+        rare: { label: 'Rare', emoji: config.emojis.Rare },
+        epic: { label: 'Epic', emoji: config.emojis.Epic },
+        legendary: { label: 'Legendary', emoji: config.emojis.Legendary }
+    };
+
+    // Add Type filters
+    for (const [typeKey, meta] of Object.entries(TYPE_META)) {
+        if (!ownedTypes.has(typeKey)) continue;
+        const count = allPals.filter(p => GameData.getPet(p.basePetId)?.type?.toLowerCase() === typeKey).length;
+        filterSelect.addOptions({
+            label: `Type: ${meta.label} (${count})`,
+            value: `type:${typeKey}`,
+            emoji: meta.emoji,
+            default: activeFilter === `type:${typeKey}`
+        });
+    }
+
+    // Add Rarity filters
+    for (const [rarityKey, meta] of Object.entries(RARITY_META)) {
+        if (!ownedRarities.has(rarityKey)) continue;
+        const count = allPals.filter(p => GameData.getPet(p.basePetId)?.rarity?.toLowerCase() === rarityKey).length;
+        filterSelect.addOptions({
+            label: `Rarity: ${meta.label} (${count})`,
+            value: `rarity:${rarityKey}`,
+            emoji: meta.emoji,
+            default: activeFilter === `rarity:${rarityKey}`
+        });
+    }
+
+   
+    container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(filterSelect)
+    );
+
+    container.addSeparatorComponents(
+        new SeparatorBuilder().setDivider(true)
+    );
+
+    // ── Item List ──
+    if (sortedPals.length === 0) {
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent('*No Pals match this filter.*')
+        );
+    } else {
+        const start = page * PALS_PER_PAGE;
+        const pagePals = sortedPals.slice(start, start + PALS_PER_PAGE);
+
+        let content = '';
+
+        pagePals.forEach(pal => {
+            const base = GameData.getPet(pal.basePetId);
+            if (!base) return;
+
+            const emojiStr = config.emojis[pal.nickname] || config.emojis[base.name] || '🐾';
+            const rarityMatch = config.emojis[base.rarity] || '⬜';
+            const paddedId = pal.shortId < 10 ? `0${pal.shortId}` : pal.shortId;
+            
+            // Format: `01` • 🐾 **Level 12** • **Nickname** <:legendary:id>
+            content += `\`${paddedId}\` • ${emojiStr} **Level ${pal.level}** • **${pal.nickname}** ${rarityMatch}\n`;
+        });
+
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(content || '*No Pals to display.*')
+        );
+    }
+
+    // Helper to safely extract emoji ID or fallback to string for buttons
+    const getBtnEmoji = (emojiStr, fallback) => {
+        if (!emojiStr) return fallback;
+        const match = emojiStr.match(/<a?:.+:(\d+)>/);
+        return match ? match[1] : emojiStr;
+    };
+
+    // ── Pagination Buttons ──
+    if (totalPages > 1) {
+        container.addSeparatorComponents(
+            new SeparatorBuilder().setDivider(true)
+        );
+
+        container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('pet_first').setEmoji(getBtnEmoji(config.emojis.first, '⏮️')).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+                new ButtonBuilder().setCustomId('pet_prev').setEmoji(getBtnEmoji(config.emojis.previous, '◀️')).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+                new ButtonBuilder().setCustomId('pet_page').setLabel(`${page + 1} / ${totalPages}`).setStyle(ButtonStyle.Primary).setDisabled(true),
+                new ButtonBuilder().setCustomId('pet_next').setEmoji(getBtnEmoji(config.emojis.next, '▶️')).setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
+                new ButtonBuilder().setCustomId('pet_last').setEmoji(getBtnEmoji(config.emojis.last, '⏭️')).setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1)
+            )
+        );
+    } else if (sortedPals.length > 0) {
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(`-# Page 1 of 1 • ${sortedPals.length} Pals`)
+        );
+    }
+
+    return container;
+}
+
+// ── Main command ────────────────────────────────────────────────────
+
 module.exports = {
     name: 'pet',
     description: 'View your or another player\'s collection of Pals.',
-    usage: '[@user] [--rarity <rarity>] [--type <type>] [--lvl] OR info <pal_id>',
+    usage: '[@user] OR info <pal_id>',
     aliases: ['pals', 'collection', 'pal', 'pets'],
     cooldown: 3,
     async execute(message, args, client, prefix) {
@@ -261,8 +477,10 @@ module.exports = {
                 return message.reply({ embeds: [detailEmbed] });
             }
 
-            // --- Main Command: List Pals with Filters ---
-            const member = await CommandHelpers.getMemberFromMessage(message, args.filter(arg => !arg.startsWith('--')).join(' ')) || message.member;
+            // --- Main Command: Component V2 List View ---
+            // If they are checking another user, parse that (ignoring old CLI args)
+            const targetQuery = args.join(' ');
+            const member = await CommandHelpers.getMemberFromMessage(message, targetQuery) || message.member;
 
             const playerResult = await CommandHelpers.validatePlayer(member.id, prefix);
             if (!playerResult.success) {
@@ -271,7 +489,6 @@ module.exports = {
                     : `**${member.displayName}** has not started their alchemical journey yet.`;
                 return message.reply({ embeds: [createErrorEmbed('No Adventure Started', notStartedMsg)] });
             }
-            const player = playerResult.player;
 
             let pals = await Pet.find({ ownerId: member.id });
             if (pals.length === 0) {
@@ -281,81 +498,96 @@ module.exports = {
                 return message.reply({ embeds: [createInfoEmbed('No Pals Found', noPalsMsg)] });
             }
 
-            // --- Apply Filters ---
-            const filters = args.filter(arg => arg.startsWith('--'));
-            let filteredPals = [...pals];
-            let filterDescription = 'Showing all Pals.';
-
-            for (const filter of filters) {
-                const [key, value] = filter.slice(2).split('=');
-                if (key === 'rarity' && value) {
-                    filteredPals = filteredPals.filter(p => GameData.getPet(p.basePetId)?.rarity?.toLowerCase() === value.toLowerCase());
-                    filterDescription = `Filtering by Rarity: **${value}**`;
-                }
-                if (key === 'type' && value) {
-                    filteredPals = filteredPals.filter(p => GameData.getPet(p.basePetId)?.type?.toLowerCase() === value.toLowerCase());
-                    filterDescription = `Filtering by Type: **${value}**`;
-                }
-                if (key === 'lvl') {
-                    filteredPals.sort((a, b) => b.level - a.level);
-                    filterDescription = 'Sorting by Level (Highest First).';
-                }
-            }
-            
-            if (filteredPals.length === 0) {
-                return message.reply({ embeds: [createInfoEmbed('No Pals Found', 'No Pals matched your filters.')] });
-            }
-
-            // --- Pagination for List View ---
+            let activeFilter = 'all';
+            let sortBy = 'id';
             let currentPage = 0;
-            const totalPages = Math.ceil(filteredPals.length / PALS_PER_PAGE);
 
-            const generateListEmbed = (page) => {
-                const start = page * PALS_PER_PAGE;
-                const end = start + PALS_PER_PAGE;
-                const pagePals = filteredPals.slice(start, end);
-
-                const list = pagePals.map(pal => {
-                    const base = GameData.getPet(pal.basePetId);
-                    return `**${pal.shortId}** ${config.emojis[pal.nickname]} **Lvl** \`${pal.level}\` • **${pal.nickname}** *\`${base.type}\`*`;
-                }).join('\n');
-
-                return createCustomEmbed(
-                    `${member.displayName}'s Pal Collection`,
-                    `${filterDescription}\n\n${list}`,
-                    '#3498DB',
-                    { footer: { text: `Page ${page + 1} of ${totalPages}` }, timestamp: false }
-                );
+            const getFilteredSorted = () => {
+                const filtered = applyFilters(pals, activeFilter);
+                return sortPals(filtered, sortBy);
             };
 
-            const generateButtons = (page) => {
-                return new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('previous_pal').setLabel('Previous').setStyle(ButtonStyle.Primary).setEmoji('⬅️').setDisabled(page === 0),
-                    new ButtonBuilder().setCustomId('next_pal').setLabel('Next').setStyle(ButtonStyle.Primary).setEmoji('➡️').setDisabled(page >= totalPages - 1)
-                );
-            };
+            let sortedItems = getFilteredSorted();
+            let totalPages = Math.max(1, Math.ceil(sortedItems.length / PALS_PER_PAGE));
+
+            const container = buildPetListContainer(member, pals, sortedItems, currentPage, totalPages, activeFilter, sortBy);
 
             const reply = await message.reply({
-                embeds: [generateListEmbed(currentPage)],
-                components: [generateButtons(currentPage)]
-            });
-            
-            const collector = reply.createMessageComponentCollector({
-                filter: i => i.user.id === message.author.id,
-                time: 5 * 60 * 1000, // 5 minutes
-                componentType: ComponentType.Button
+                components: [container],
+                flags: MessageFlags.IsComponentsV2
             });
 
-            collector.on('collect', async i => {
-                if (i.customId === 'next_pal') currentPage++;
-                else if (i.customId === 'previous_pal') currentPage--;
-                await i.update({ embeds: [generateListEmbed(currentPage)], components: [generateButtons(currentPage)] });
+            // --- Collector ---
+            const collector = reply.createMessageComponentCollector({
+                filter: i => i.user.id === message.author.id,
+                time: 5 * 60 * 1000 // 5 minutes
+            });
+
+            collector.on('collect', async (interaction) => {
+                try {
+                    if (interaction.isStringSelectMenu() && interaction.customId === 'pet_filter') {
+                        activeFilter = interaction.values[0];
+                        currentPage = 0;
+                    } else if (interaction.isButton()) {
+                        switch (interaction.customId) {
+                            case 'pet_sort':
+                                if (sortBy === 'id') sortBy = 'lvl';
+                                else if (sortBy === 'lvl') sortBy = 'rarity';
+                                else sortBy = 'id';
+                                currentPage = 0;
+                                break;
+                            case 'pet_first': currentPage = 0; break;
+                            case 'pet_prev':  currentPage = Math.max(0, currentPage - 1); break;
+                            case 'pet_next':  currentPage = Math.min(totalPages - 1, currentPage + 1); break;
+                            case 'pet_last':  currentPage = totalPages - 1; break;
+                        }
+                    }
+
+                    sortedItems = getFilteredSorted();
+                    totalPages = Math.max(1, Math.ceil(sortedItems.length / PALS_PER_PAGE));
+                    currentPage = Math.min(currentPage, totalPages - 1);
+
+                    const updated = buildPetListContainer(member, pals, sortedItems, currentPage, totalPages, activeFilter, sortBy);
+
+                    await interaction.update({
+                        components: [updated],
+                        flags: MessageFlags.IsComponentsV2
+                    });
+                } catch (err) {
+                    if (err.code === 10062) return; // Expired interaction
+                    console.error('Pet list interaction error:', err);
+                }
             });
 
             collector.on('end', () => {
-                const finalComponents = generateButtons(currentPage);
-                finalComponents.components.forEach(button => button.setDisabled(true));
-                reply.edit({ components: [finalComponents] }).catch(() => {});
+                sortedItems = getFilteredSorted();
+                totalPages = Math.max(1, Math.ceil(sortedItems.length / PALS_PER_PAGE));
+                
+                // Rebuild the container but disable interactive inputs
+                const finalContainer = buildPetListContainer(member, pals, sortedItems, currentPage, totalPages, activeFilter, sortBy);
+                
+                // Iterate through the builder components to disable interactive elements
+                finalContainer.components.forEach(component => {
+                    if (component.components) {
+                        component.components.forEach(inner => {
+                            if (inner.setDisabled) {
+                                inner.setDisabled(true);
+                            }
+                        });
+                    }
+                });
+
+                // Disable section builder buttons
+                if (finalContainer.components && finalContainer.components[0] && finalContainer.components[0].accessory) {
+                    if (finalContainer.components[0].accessory.data) {
+                         finalContainer.components[0].accessory.data.disabled = true;
+                    }
+                }
+
+                reply.edit({
+                    components: [finalContainer],
+                    flags: MessageFlags.IsComponentsV2
+                }).catch(() => {});
             });
 
         } catch (error) {
