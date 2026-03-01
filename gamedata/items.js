@@ -312,7 +312,7 @@ module.exports = {
     'level_potion': {
         name: 'Level Potion',
         type: 'potion',
-        rarity: 'common',
+        rarity: 'Common',
         description: 'Mysterious drink which grants sudden level increase by 1',
         source: 'brewing',
         effect: { type: 'level_up', value: 1 },
@@ -987,7 +987,7 @@ module.exports = {
         rarity: 'Uncommon',
         description: 'A festive item that entertains familiars and boosts morale.',
         source: 'event',
-        effect: { type: 'buff', stat: 'morale', value: 20, duration: '1_dungeon' }
+        effect: { type: 'buff', stats: { morale: 20 }, duration: 30 * 60 * 1000 }
     },
     'guild_token': {
         name: 'Guild Token',

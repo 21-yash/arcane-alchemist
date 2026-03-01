@@ -14,6 +14,7 @@ const {
 const CommandHelpers = require('../../utils/commandHelpers');
 const LabManager = require('../../utils/labManager');
 const config = require('../../config/config.json');
+const e = require('../../utils/emojis');
 
 // ── Category metadata ──────────────────────────────────────────────
 const CATEGORIES = {
@@ -55,7 +56,7 @@ function getEffectSummary(upgradeId, effectObj) {
         if (typeof val === 'object' && val !== null) {
             return Object.entries(val).map(([k, v]) => `${humanize(k)}: **${v}**`).join(', ');
         }
-        if (typeof val === 'boolean') return val ? `${humanize(key)} ✅` : '';
+        if (typeof val === 'boolean') return val ? `${humanize(key)} ${e.success}` : '';
         if (typeof val === 'number' && val < 1 && val > 0) return `${humanize(key)}: **${(val * 100).toFixed(0)}%**`;
         if (typeof val === 'number' && val >= 1 && val < 10) return `${humanize(key)}: **${val}x**`;
         return `${humanize(key)}: **${val}**`;
@@ -118,7 +119,7 @@ function buildCategoryText(categoryKey, lab, player) {
         const currentEffect = currentLevel > 0 ? data.effects[currentLevel - 1] : null;
         const nextEffect = !isMaxed ? data.effects[currentLevel] : null;
 
-        const statusIcon = isMaxed ? '✅' : currentLevel > 0 ? '🔷' : '⬜';
+        const statusIcon = isMaxed ? e.success : e.up;
         text += `${statusIcon} **${data.name}**\n`;
         text += `${progressBar(currentLevel, data.maxLevel)}  \`Lv ${currentLevel}/${data.maxLevel}\`\n`;
         text += `-# ${data.description}\n`;
@@ -166,8 +167,8 @@ function buildUpgradeDetailText(upgradeId, lab, player) {
         const isNext = currentLevel === level - 1;
 
         let prefix_;
-        if (isUnlocked) prefix_ = '✅';
-        else if (isNext) prefix_ = '➡️';
+        if (isUnlocked) prefix_ = e.success;
+        else if (isNext) prefix_ = e.next;
         else prefix_ = '🔒';
 
         text += `${prefix_} **Lv ${level}**`;
@@ -183,7 +184,7 @@ function buildUpgradeDetailText(upgradeId, lab, player) {
         text += `${config.emojis.gold || '🪙'} **${nextCost.toLocaleString()}** gold`;
         text += canAfford ? ` *(You have ${player.gold.toLocaleString()})*` : ` *(Need ${(nextCost - player.gold).toLocaleString()} more)*`;
     } else {
-        text += `\n### ✅ Fully Maxed!`;
+        text += `\n### ${e.success} Fully Maxed!`;
     }
 
     return text;
@@ -211,6 +212,11 @@ function buildOverviewContainer(player, lab, effects, prefix, labUpgrades) {
         new ActionRowBuilder().addComponents(selectMenu)
     );
 
+    // Separator before controls
+    container.addSeparatorComponents(
+        new SeparatorBuilder().setDivider(true)
+    );
+    
     // Action buttons
     container.addActionRowComponents(buildButtonRow(lab));
 
@@ -252,7 +258,7 @@ function buildCategoryContainer(categoryKey, lab, player, labUpgrades) {
             const isMaxed = level >= data.maxLevel;
             upgradeSelect.addOptions({
                 label: `${data.name} (Lv ${level}/${data.maxLevel})`,
-                description: isMaxed ? '✅ Maxed' : `Next: ${formatCost(data.costs[level])} gold`,
+                description: isMaxed ? `Maxed` : `Next: ${formatCost(data.costs[level])} gold`,
                 value: id
             });
         }
@@ -260,6 +266,10 @@ function buildCategoryContainer(categoryKey, lab, player, labUpgrades) {
             new ActionRowBuilder().addComponents(upgradeSelect)
         );
     }
+
+    container.addSeparatorComponents(
+        new SeparatorBuilder().setDivider(true)
+    );
 
     // Action buttons
     container.addActionRowComponents(buildButtonRow(lab));
@@ -296,6 +306,10 @@ function buildUpgradeDetailContainer(upgradeId, lab, player, labUpgrades) {
         new ActionRowBuilder().addComponents(buildCategorySelect(lab, labUpgrades))
     );
 
+    container.addSeparatorComponents(
+        new SeparatorBuilder().setDivider(true)
+    );
+
     // Buy + Back buttons
     container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
@@ -304,12 +318,12 @@ function buildUpgradeDetailContainer(upgradeId, lab, player, labUpgrades) {
                 .setLabel(isMaxed ? 'Already Maxed' : `Upgrade → Lv ${currentLevel + 1} (${formatCost(nextCost)} gold)`)
                 .setStyle(isMaxed ? ButtonStyle.Secondary : canAfford ? ButtonStyle.Success : ButtonStyle.Danger)
                 .setDisabled(isMaxed || !canAfford)
-                .setEmoji(isMaxed ? '✅' : '⬆️'),
+                .setEmoji(isMaxed ? e.success : e.up),
             new ButtonBuilder()
                 .setCustomId('lab_back_category')
                 .setLabel('Back to Category')
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji('◀️')
+                .setEmoji(e.previous)
         )
     );
 
@@ -329,7 +343,7 @@ function buildSuccessContainer(upgradeId, lab, player, labUpgrades, newLevel) {
     // Success banner
     container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
-            `### ✅ Upgrade Successful!\n**${data.name}** upgraded to **Level ${newLevel}** · ${config.emojis.gold || '🪙'} **${player.gold.toLocaleString()}** gold remaining`
+            `### ${e.success} Upgrade Successful!\n**${data.name}** upgraded to **Level ${newLevel}** · ${config.emojis.gold || '🪙'} **${player.gold.toLocaleString()}** gold remaining`
         )
     );
 
@@ -352,6 +366,10 @@ function buildSuccessContainer(upgradeId, lab, player, labUpgrades, newLevel) {
         new ActionRowBuilder().addComponents(buildCategorySelect(lab, labUpgrades))
     );
 
+    container.addSeparatorComponents(
+        new SeparatorBuilder().setDivider(true)
+    );
+
     // Buy + Back buttons
     container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
@@ -360,12 +378,12 @@ function buildSuccessContainer(upgradeId, lab, player, labUpgrades, newLevel) {
                 .setLabel(isMaxed ? 'Already Maxed' : `Upgrade → Lv ${newLevel + 1} (${formatCost(nextCost)} gold)`)
                 .setStyle(isMaxed ? ButtonStyle.Secondary : canAfford ? ButtonStyle.Success : ButtonStyle.Danger)
                 .setDisabled(isMaxed || !canAfford)
-                .setEmoji(isMaxed ? '✅' : '⬆️'),
+                .setEmoji(isMaxed ? e.success : e.up),
             new ButtonBuilder()
                 .setCustomId('lab_back_category')
                 .setLabel('Back to Category')
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji('◀️')
+                .setEmoji(e.previous)
         )
     );
 
@@ -407,13 +425,13 @@ function buildButtonRow(lab) {
             .setCustomId('lab_collect_dust')
             .setLabel(`Collect Dust (${Math.floor(lab.arcaneDustStored || 0)})`)
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji('🔮')
+            .setEmoji(CommandHelpers.getItemEmoji('arcane_dust'))
             .setDisabled(!lab.arcaneDustStored || lab.arcaneDustStored < 1),
         new ButtonBuilder()
             .setCustomId('lab_refresh')
             .setLabel('Refresh')
             .setStyle(ButtonStyle.Primary)
-            .setEmoji('🔄')
+            .setEmoji(e.reload)
     );
 }
 
@@ -513,7 +531,7 @@ module.exports = {
                             flags: MessageFlags.IsComponentsV2
                         });
                     } else {
-                        await interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
+                        await interaction.reply({ content: `${e.error} ${result.error}`, ephemeral: true });
                     }
                 } else if (interaction.customId === 'lab_back_category' && currentView !== 'overview') {
                     selectedUpgradeId = null;
@@ -552,24 +570,43 @@ module.exports = {
             } catch (error) {
                 console.error('Lab interaction error:', error);
                 if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ content: '❌ An error occurred. Please try again.', ephemeral: true }).catch(() => {});
+                    await interaction.reply({ content: `${e.error} An error occurred. Please try again.`, ephemeral: true }).catch(() => {});
                 }
             }
         });
 
-        collector.on('end', () => {
-            // Disable by building a container with disabled select
+        collector.on('end', async () => {
             try {
-                const disabledContainer = new ContainerBuilder()
-                    .setAccentColor(LAB_COLOR);
-                disabledContainer.addTextDisplayComponents(
-                    new TextDisplayBuilder().setContent('-# ⏱️ This lab session has expired. Run the command again.')
-                );
-                reply.edit({
-                    components: [disabledContainer],
-                    flags: MessageFlags.IsComponentsV2
-                }).catch(() => {});
-            } catch {
+                // Rebuild the current view to keep the text, but disable inputs
+                const freshPlayer = await CommandHelpers.validatePlayer(message.author.id, prefix);
+                if (!freshPlayer.success) return;
+                const fp = freshPlayer.player;
+                const { lab: freshLab, effects: freshEffects } = await LabManager.getLabData(message.author.id);
+                
+                let finalContainer;
+                if (currentView === 'overview') {
+                    finalContainer = buildOverviewContainer(fp, freshLab, freshEffects, prefix, labUpgrades);
+                } else if (selectedUpgradeId) {
+                    finalContainer = buildUpgradeDetailContainer(selectedUpgradeId, freshLab, fp, labUpgrades);
+                } else {
+                    finalContainer = buildCategoryContainer(currentView, freshLab, fp, labUpgrades);
+                }
+
+                if (finalContainer) {
+                    finalContainer.components.forEach(component => {
+                        if (component.components) {
+                            component.components.forEach(inner => {
+                                if (inner.setDisabled) inner.setDisabled(true);
+                            });
+                        }
+                    });
+
+                    reply.edit({
+                        components: [finalContainer],
+                        flags: MessageFlags.IsComponentsV2
+                    }).catch(() => {});
+                }
+            } catch (err) {
                 reply.edit({ components: [] }).catch(() => {});
             }
         });
@@ -587,7 +624,7 @@ module.exports = {
         const embed = new EmbedBuilder()
             .setColor('#10B981')
             .setDescription(
-                `### ✅ Upgrade Purchased!\n` +
+                `### ${e.success} Upgrade Purchased!\n` +
                 `**${upgradeData.name}** upgraded to **Level ${result.newLevel}/${upgradeData.maxLevel}**\n` +
                 `${config.emojis.gold || '🪙'} **${player.gold.toLocaleString()}** gold remaining`
             )

@@ -8,6 +8,7 @@ const config = require('../../config/config.json');
 const { restorePetHp } = require('../../utils/stamina');
 const CommandHelpers = require('../../utils/commandHelpers');
 const LabManager = require('../../utils/labManager');
+const e = require('../../utils/emojis');
 
 const PALS_PER_PAGE = 12;
 const PET_COLOR = 0x3498DB;
@@ -299,11 +300,9 @@ function buildPetListContainer(member, allPals, sortedPals, page, totalPages, ac
     let sortName = sortBy === 'id' ? 'ID' : (sortBy === 'lvl' ? 'Level' : 'Rarity');
     header += `Pals Owned: \`${allPals.length}\`  •  Sorting by: \`${sortName}\``;
 
-    const sortEmoji = sortBy === 'id' ? '🔢' : (sortBy === 'lvl' ? '⭐' : '🌟');
-
     const sortBtn = new ButtonBuilder()
         .setCustomId('pet_sort')
-        .setEmoji(sortEmoji)
+        .setLabel(sortName)
         .setStyle(ButtonStyle.Secondary);
 
     const headerSection = new SectionBuilder()
@@ -398,22 +397,16 @@ function buildPetListContainer(member, allPals, sortedPals, page, totalPages, ac
             const emojiStr = config.emojis[pal.nickname] || config.emojis[base.name] || '🐾';
             const rarityMatch = config.emojis[base.rarity] || '⬜';
             const paddedId = pal.shortId < 10 ? `0${pal.shortId}` : pal.shortId;
+            const paddedlvl = pal.level < 10 ? `0${pal.level}` : pal.level;
             
             // Format: `01` • 🐾 **Level 12** • **Nickname** <:legendary:id>
-            content += `\`${paddedId}\` • ${emojiStr} **Level ${pal.level}** • **${pal.nickname}** ${rarityMatch}\n`;
+            content += `\`${paddedId}\` • ${emojiStr} **Level** \`${paddedlvl}\` • **${pal.nickname}** ${rarityMatch}\n`;
         });
 
         container.addTextDisplayComponents(
             new TextDisplayBuilder().setContent(content || '*No Pals to display.*')
         );
     }
-
-    // Helper to safely extract emoji ID or fallback to string for buttons
-    const getBtnEmoji = (emojiStr, fallback) => {
-        if (!emojiStr) return fallback;
-        const match = emojiStr.match(/<a?:.+:(\d+)>/);
-        return match ? match[1] : emojiStr;
-    };
 
     // ── Pagination Buttons ──
     if (totalPages > 1) {
@@ -423,11 +416,11 @@ function buildPetListContainer(member, allPals, sortedPals, page, totalPages, ac
 
         container.addActionRowComponents(
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('pet_first').setEmoji(getBtnEmoji(config.emojis.first, '⏮️')).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
-                new ButtonBuilder().setCustomId('pet_prev').setEmoji(getBtnEmoji(config.emojis.previous, '◀️')).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+                new ButtonBuilder().setCustomId('pet_first').setEmoji(e.first).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+                new ButtonBuilder().setCustomId('pet_prev').setEmoji(e.previous).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
                 new ButtonBuilder().setCustomId('pet_page').setLabel(`${page + 1} / ${totalPages}`).setStyle(ButtonStyle.Primary).setDisabled(true),
-                new ButtonBuilder().setCustomId('pet_next').setEmoji(getBtnEmoji(config.emojis.next, '▶️')).setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
-                new ButtonBuilder().setCustomId('pet_last').setEmoji(getBtnEmoji(config.emojis.last, '⏭️')).setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1)
+                new ButtonBuilder().setCustomId('pet_next').setEmoji(e.next).setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
+                new ButtonBuilder().setCustomId('pet_last').setEmoji(e.last).setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1)
             )
         );
     } else if (sortedPals.length > 0) {

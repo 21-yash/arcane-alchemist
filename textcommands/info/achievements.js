@@ -7,13 +7,7 @@ const config = require('../../config/config.json');
 
 const ACHIEVEMENTS_PER_PAGE = 7;
 const ACCENT_COLOR = 0xFFD700; // Gold
-
-// Helper to safely extract emoji ID or fallback to string for buttons
-const getBtnEmoji = (emojiStr, fallback) => {
-    if (!emojiStr) return fallback;
-    const match = emojiStr.match(/<a?:.+:(\d+)>/);
-    return match ? match[1] : emojiStr;
-};
+const e = require('../../utils/emojis');
 
 // Helper to determine the best emoji based on achievement ID
 const getAchievementEmoji = (id, unlocked) => {
@@ -155,11 +149,11 @@ function buildAchievementContainer(member, allAchievements, unlockedIds, page, t
 
         container.addActionRowComponents(
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('ach_first').setEmoji(getBtnEmoji(config.emojis.first, '⏮️')).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
-                new ButtonBuilder().setCustomId('ach_prev').setEmoji(getBtnEmoji(config.emojis.previous, '◀️')).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+                new ButtonBuilder().setCustomId('ach_first').setEmoji(e.first).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+                new ButtonBuilder().setCustomId('ach_prev').setEmoji(e.previous).setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
                 new ButtonBuilder().setCustomId('ach_page').setLabel(`${page + 1} / ${totalPages}`).setStyle(ButtonStyle.Primary).setDisabled(true),
-                new ButtonBuilder().setCustomId('ach_next').setEmoji(getBtnEmoji(config.emojis.next, '▶️')).setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
-                new ButtonBuilder().setCustomId('ach_last').setEmoji(getBtnEmoji(config.emojis.last, '⏭️')).setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1)
+                new ButtonBuilder().setCustomId('ach_next').setEmoji(e.next).setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
+                new ButtonBuilder().setCustomId('ach_last').setEmoji(e.last).setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1)
             )
         );
     } else if (filteredAchievements.length > 0) {

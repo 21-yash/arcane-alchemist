@@ -115,6 +115,7 @@ function buildInventoryContainer(player, user, sortedItems, page, totalPages, ac
             label: `${meta.label}  (${count})`,
             description: `Show ${meta.label.toLowerCase()} only`,
             value: type,
+            emoji: meta.emoji,
             default: activeFilter === type
         });
     }
@@ -171,13 +172,6 @@ function buildInventoryContainer(player, user, sortedItems, page, totalPages, ac
         );
     }
 
-    // Helper to safely extract emoji ID or fallback to string for buttons
-    const getBtnEmoji = (emojiStr, fallback) => {
-        if (!emojiStr) return fallback;
-        const match = emojiStr.match(/<a?:.+:(\d+)>/);
-        return match ? match[1] : emojiStr;
-    };
-
     // ── Pagination buttons ──
     if (totalPages > 1) {
         container.addSeparatorComponents(
@@ -188,12 +182,12 @@ function buildInventoryContainer(player, user, sortedItems, page, totalPages, ac
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('inv_first')
-                    .setEmoji(getBtnEmoji(e.first, '⏮️'))
+                    .setEmoji(e.first)
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(page === 0),
                 new ButtonBuilder()
                     .setCustomId('inv_prev')
-                    .setEmoji(getBtnEmoji(e.previous, '◀️'))
+                    .setEmoji(e.previous)
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(page === 0),
                 new ButtonBuilder()
@@ -203,12 +197,12 @@ function buildInventoryContainer(player, user, sortedItems, page, totalPages, ac
                     .setDisabled(true),
                 new ButtonBuilder()
                     .setCustomId('inv_next')
-                    .setEmoji(getBtnEmoji(e.next, '▶️'))
+                    .setEmoji(e.next)
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(page >= totalPages - 1),
                 new ButtonBuilder()
                     .setCustomId('inv_last')
-                    .setEmoji(getBtnEmoji(e.last, '⏭️'))
+                    .setEmoji(e.last)
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(page >= totalPages - 1)
             )
@@ -306,10 +300,21 @@ module.exports = {
                 sortedItems = getFilteredSorted();
                 totalPages = Math.max(1, Math.ceil(sortedItems.length / ITEMS_PER_PAGE));
                 const finalContainer = buildInventoryContainer(player, user, sortedItems, currentPage, totalPages, activeFilter);
-                reply.edit({
-                    components: [finalContainer],
-                    flags: MessageFlags.IsComponentsV2
-                }).catch(() => {});
+                
+                if (finalContainer) {
+                    finalContainer.components.forEach(component => {
+                        if (component.components) {
+                            component.components.forEach(inner => {
+                                if (inner.setDisabled) inner.setDisabled(true);
+                            });
+                        }
+                    });
+
+                    reply.edit({
+                        components: [finalContainer],
+                        flags: MessageFlags.IsComponentsV2
+                    }).catch(() => {});
+                }
             });
 
         } catch (error) {
