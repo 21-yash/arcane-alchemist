@@ -156,8 +156,14 @@ function buildInventoryContainer(player, user, sortedItems, page, totalPages, ac
                 content += `${meta.emoji} **${meta.label}**\n`;
                 lastType = itemData.type;
             }
-
+            
             content += `> ${itemEmoji} \`${invItem.quantity}x\` **${itemData.name}** *(${itemData.rarity})*\n`;
+            /*
+            const itemRarityStr = itemData.rarity || 'Common';
+            const rarityEmoji = config.emojis[itemRarityStr.charAt(0).toUpperCase() + itemRarityStr.slice(1).toLowerCase()] || '⬜';
+
+            content += `> ${itemEmoji} \`${invItem.quantity}x\` **${itemData.name}** ${rarityEmoji}\n`;
+            */
         });
 
         container.addTextDisplayComponents(

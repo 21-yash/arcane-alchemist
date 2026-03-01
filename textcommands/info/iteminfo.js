@@ -2,6 +2,7 @@ const { createErrorEmbed, createCustomEmbed } = require('../../utils/embed');
 const GameData = require('../../utils/gameData');
 const CommandHelpers = require('../../utils/commandHelpers');
 const path = require('path');
+const config = require('../../config/config.json');
 
 const formatDuration = (dur) => {
     if (typeof dur === 'string') return dur.replace(/_/g, ' ');
@@ -86,9 +87,12 @@ module.exports = {
             const emoji = CommandHelpers.getItemEmoji(foundItemId);
             let description = `${foundItemData.description}\n\n`;
 
+            const rarityStr = foundItemData.rarity || 'Common';
+            const rarityEmoji = config.emojis[rarityStr.charAt(0).toUpperCase() + rarityStr.slice(1).toLowerCase()] || '⬜';
+
             // Add type and rarity
             description += `**Type:** ${foundItemData.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}\n`;
-            description += `**Rarity:** ${foundItemData.rarity}\n`;
+            description += `**Rarity:** ${rarityEmoji} ${foundItemData.rarity}\n`;
             description += `**Source:** ${foundItemData.source ? foundItemData.source.replace(/\b\w/g, l => l.toUpperCase()) : 'Unknown'}\n`;
 
             // Add stats if equipment

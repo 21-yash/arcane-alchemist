@@ -7,6 +7,7 @@ const {
     createInfoEmbed,
 } = require("../../utils/embed");
 const { getMember } = require("../../utils/functions");
+const config = require("../../config/config.json");
 
 module.exports = {
     name: "additem",
@@ -109,6 +110,9 @@ module.exports = {
                 targetUserDisplay = `User ID: ${targetUserId}`;
             }
 
+            const itemRarityStr = itemData.rarity || 'Common';
+            const rarityEmoji = config.emojis[itemRarityStr.charAt(0).toUpperCase() + itemRarityStr.slice(1).toLowerCase()] || '⬜';
+
             return message.reply({
                 embeds: [
                     createSuccessEmbed(
@@ -117,7 +121,7 @@ module.exports = {
                         `**Item Details:**\n` +
                         `• **Type:** ${itemData.type || 'Unknown'}\n` +
                         `• **Description:** ${itemData.description || 'No description available'}\n` +
-                        `• **Rarity:** ${itemData.rarity || 'Common'}`
+                        `• **Rarity:** ${rarityEmoji} ${itemRarityStr}`
                     ),
                 ],
             });
