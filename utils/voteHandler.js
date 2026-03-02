@@ -96,7 +96,7 @@ async function handleVoteReward(userId, client) {
         
         // Add currency first
         const goldEmoji = config.emojis.gold || '🪙';
-        const dustEmoji = config.emojis.arcane_dust || '✨';
+        const dustEmoji = config.emojis.arcaneDust || '✨';
         rewardsText += `${goldEmoji} **${rewards.gold.toLocaleString()}** Gold\n`;
         rewardsText += `${dustEmoji} **${rewards.dust.toLocaleString()}** Arcane Dust\n`;
         
@@ -156,7 +156,7 @@ async function logVote(client, user, player, crate, rewards, isWeekend) {
         if (!logChannel) return;
 
         const goldEmoji = config.emojis.gold || '🪙';
-        const dustEmoji = config.emojis.arcane_dust || '✨';
+        const dustEmoji = config.emojis.arcaneDust || '✨';
 
         // Build compact rewards list
         let rewardsList = `${goldEmoji} ${rewards.gold} | ${dustEmoji} ${rewards.dust}`;

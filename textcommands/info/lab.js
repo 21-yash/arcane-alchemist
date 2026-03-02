@@ -79,8 +79,9 @@ function buildOverviewText(player, lab, effects, prefix) {
     const totalLevels = Object.values(labUpgrades).reduce((s, u) => s + u.maxLevel, 0);
     const currentLevels = (lab.upgrades || []).reduce((s, u) => s + (u.level || 0), 0);
 
-    const researchStatus = effects.researchGeneration
-        ? `${effects.researchGeneration.points} pts / ${effects.researchGeneration.interval}min`
+    const expeditionConfig = effects.expedition;
+    const researchStatus = expeditionConfig
+        ? `${LabManager.EXPEDITION_TIERS[expeditionConfig.maxTier]?.label || 'Basic'} tier${expeditionConfig.timerReduction ? ` · -${Math.round(expeditionConfig.timerReduction * 100)}% timer` : ''}`
         : '`Not Active`';
     const dustStatus = effects.arcaneDustGeneration
         ? `${effects.arcaneDustGeneration.amount} dust / ${effects.arcaneDustGeneration.interval}min`
@@ -93,8 +94,7 @@ function buildOverviewText(player, lab, effects, prefix) {
         `-# ${ownedCount}/${totalUpgrades} upgrades researched\n\n` +
         `### 💰 Resources\n` +
         `${config.emojis.gold || '🪙'} **Gold:** ${player.gold?.toLocaleString() || 0}\n` +
-        `${config.emojis.arcane_dust || '✨'} **Arcane Dust:** ${player.arcaneDust?.toLocaleString() || 0}\n` +
-        `📊 **Research Points:** ${lab.researchPoints || 0}\n\n` +
+        `${config.emojis.arcaneDust || '✨'} **Arcane Dust:** ${player.arcaneDust?.toLocaleString() || 0}\n\n` +
         `### ⚡ Active Systems\n` +
         `📚 **Research Station:** ${researchStatus}\n` +
         `🔮 **Arcane Reactor:** ${dustStatus} · \`${Math.floor(lab.arcaneDustStored || 0)} stored\``
@@ -425,7 +425,7 @@ function buildButtonRow(lab) {
             .setCustomId('lab_collect_dust')
             .setLabel(`Collect Dust (${Math.floor(lab.arcaneDustStored || 0)})`)
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji(CommandHelpers.getItemEmoji('arcane_dust'))
+            .setEmoji(CommandHelpers.getItemEmoji('arcaneDust'))
             .setDisabled(!lab.arcaneDustStored || lab.arcaneDustStored < 1),
         new ButtonBuilder()
             .setCustomId('lab_refresh')
@@ -550,7 +550,7 @@ module.exports = {
                         await fp.save();
                         await freshLab.save();
                         await interaction.reply({
-                            content: `${config.emojis.arcane_dust || '✨'} Collected **${amount}** Arcane Dust! You now have **${fp.arcaneDust.toLocaleString()}** total.`,
+                            content: `${config.emojis.arcaneDust || '✨'} Collected **${amount}** Arcane Dust! You now have **${fp.arcaneDust.toLocaleString()}** total.`,
                             ephemeral: true
                         });
                     } else {

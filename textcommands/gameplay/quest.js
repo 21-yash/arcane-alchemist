@@ -227,7 +227,7 @@ function formatRewards(rewards) {
     const parts = [];
     if (rewards.xp) parts.push(`**${rewards.xp}** XP`);
     if (rewards.gold) parts.push(`${e.gold} **${rewards.gold}**`);
-    if (rewards.arcaneDust) parts.push(`${e.arcane_dust} **${rewards.arcaneDust}**`);
+    if (rewards.arcaneDust) parts.push(`${e.arcaneDust} **${rewards.arcaneDust}**`);
     if (rewards.items) {
         rewards.items.forEach(i => {
             const itemEmoji = e[i.itemId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())] || '';

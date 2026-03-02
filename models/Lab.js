@@ -12,10 +12,32 @@ const LaboratorySchema = new mongoose.Schema({
         upgradeId: String,
         expiresAt: { type: Date }
     }],
-    researchPoints: { type: Number, default: 0 },
-    lastResearchTick: { type: Date, default: null },
     arcaneDustStored: { type: Number, default: 0 },
     lastArcaneDustTick: { type: Date, default: null },
+    researchExpeditions: {
+        board: [{
+            id: String,
+            domain: String,
+            tier: String,
+            rarityPool: [String],
+            dustCost: Number,
+            goldCost: Number,
+            sacrifices: [{
+                rarity: String,
+                count: Number
+            }],
+            timerHours: Number,
+        }],
+        lastBoardRefresh: { type: Date, default: null },
+        active: {
+            expeditionId: { type: String, default: null },
+            startedAt: { type: Date, default: null },
+            completesAt: { type: Date, default: null },
+            domain: { type: String, default: null },
+            tier: { type: String, default: null },
+            rarityPool: { type: [String], default: [] },
+        }
+    },
     autoBrewer: {
         recipeId: { type: String, default: null },
         storage: {

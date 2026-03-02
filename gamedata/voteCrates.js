@@ -15,44 +15,45 @@
 
 const items = require('./items');
 const recipes = require('./recipes');
+const e = require('../config/config.json').emojis;
 
 // Crate definitions
 const crateTypes = {
     common: {
         name: 'Common Vote Crate',
-        emoji: '📦',
+        emoji: e['Common Crate'],
         color: '#A0522D', // Brown
         description: 'A simple crate containing basic rewards for your support!',
         minStreak: 1,
         maxStreak: 9,
-        image: 'common_vote_crate.png'
+        image: 'assets\icons\common_crate.png'
     },
-    uncommon: {
-        name: 'Uncommon Vote Crate',
-        emoji: '🎁',
+    rare: {
+        name: 'Rare Vote Crate',
+        emoji: e['Rare Crate'],
         color: '#2ECC71', // Green
         description: 'A refined crate with better chances for valuable items!',
         minStreak: 10,
         maxStreak: 19,
-        image: 'uncommon_vote_crate.png'
+        image: 'assets\icons\rare_crate.png'
     },
-    rare: {
-        name: 'Rare Vote Crate',
-        emoji: '💎',
+    epic: {
+        name: 'Epic Vote Crate',
+        emoji: e['Epic Crate'],
         color: '#9B59B6', // Purple
         description: 'A mystical crate brimming with powerful rewards!',
         minStreak: 20,
         maxStreak: 39,
-        image: 'rare_vote_crate.png'
+        image: 'assets\icons\epic_crate.png'
     },
     legendary: {
         name: 'Legendary Vote Crate',
-        emoji: '✨',
+        emoji: e['Legendary Crate'],
         color: '#FFD700', // Gold
         description: 'An extraordinary crate containing legendary treasures!',
         minStreak: 40,
         maxStreak: Infinity,
-        image: 'legendary_vote_crate.png'
+        image: 'assets\icons\legendary_crate.png'
     }
 };
 
@@ -78,7 +79,7 @@ const lootTables = {
         goldBonus: { min: 50, max: 150 },
         dustBonus: { min: 10, max: 30 }
     },
-    uncommon: {
+    rare: {
         categoryWeights: {
             ingredient: 47,
             crafting_material: 40,
@@ -96,7 +97,7 @@ const lootTables = {
         goldBonus: { min: 100, max: 300 },
         dustBonus: { min: 25, max: 50 }
     },
-    rare: {
+    epic: {
         categoryWeights: {
             ingredient: 39,
             crafting_material: 39,
@@ -139,8 +140,8 @@ const lootTables = {
  */
 function getCrateType(streak) {
     if (streak >= 40) return 'legendary';
-    if (streak >= 20) return 'rare';
-    if (streak >= 10) return 'uncommon';
+    if (streak >= 20) return 'epic';
+    if (streak >= 10) return 'rare';
     return 'common';
 }
 

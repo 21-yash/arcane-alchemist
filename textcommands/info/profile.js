@@ -54,7 +54,7 @@ module.exports = {
                         { name: '🐾 Pals Owned', value: `\`${palCount}\``, inline: true },
                         { name: '🏆 Achievements', value: `\`${player.achievements.length}/${totalAchievements}\``, inline: true },
                         { name: '📊 Stats', value: `Forages: \`${player.stats.forageCount}\`\nDungeons Cleared: \`${player.stats.dungeonClears}\`\nExpeditions: \`${player.stats.expeditionsCompleted || 0}\`\nArena Wins: \`${player.stats.arenaWins || 0}\`\nPotions Brewed: \`${player.stats.potionsBrewed}\`\nItems Crafted: \`${player.stats.itemsCrafted}\`` },
-                        { name: '🧪 Laboratory', value: `Level: \`${lab.level || 1}\`\nUpgrades Owned: \`${lab.upgrades?.length || 0}\`\nResearch Points: \`${lab.researchPoints || 0}\`` , inline: true }
+                        { name: '🧪 Laboratory', value: `Level: \`${lab.level || 1}\`\nUpgrades Owned: \`${lab.upgrades?.length || 0}\`\nArcane Dust: \`${player.arcaneDust || 0}\`` , inline: true }
                     ],
                     timestamp: false
                 }

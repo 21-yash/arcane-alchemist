@@ -55,7 +55,7 @@ class LabManager {
             rarePetChanceBonus: 0,
             breedingExtraEggChance: 0,
             breedingTimeReduction: 0,
-            researchGeneration: null,
+            expedition: { boardSlots: 2, maxTier: 'basic', timerReduction: 0, refreshHours: 24 },
             healingSpeedMultiplier: 1,
             playerXpBonus: 0,
             rareItemChanceBonus: 0,
@@ -115,7 +115,14 @@ class LabManager {
                     effects.breedingTimeReduction = levelEffect.breedingTimeReduction || 0;
                     break;
                 case 'research_station':
-                    effects.researchGeneration = levelEffect.researchGeneration;
+                    if (levelEffect.expedition) {
+                        effects.expedition = {
+                            boardSlots: levelEffect.expedition.boardSlots || 2,
+                            maxTier: levelEffect.expedition.maxTier || 'basic',
+                            timerReduction: levelEffect.expedition.timerReduction || 0,
+                            refreshHours: levelEffect.expedition.refreshHours || 24
+                        };
+                    }
                     break;
                 case 'rest_area':
                     effects.healingSpeedMultiplier = levelEffect.healingSpeedMultiplier || effects.healingSpeedMultiplier;
@@ -192,9 +199,7 @@ class LabManager {
         let labChanged = false;
         let playerChanged = false;
 
-        if (this.processResearchGeneration(lab, effects, now)) {
-            labChanged = true;
-        }
+        // Research generation removed — replaced by expedition board
         if (this.processArcaneReactor(lab, effects, now)) {
             labChanged = true;
         }
@@ -217,26 +222,301 @@ class LabManager {
         return { lab, effects };
     }
 
-    static processResearchGeneration(lab, effects, now) {
-        if (!effects.researchGeneration) return false;
-        const { points, interval } = effects.researchGeneration;
-        if (!points || !interval) return false;
+    // ── Expedition Board System ──────────────────────────────────
 
-        if (!lab.lastResearchTick) {
-            lab.lastResearchTick = now;
-            return true;
+    static EXPEDITION_TIERS = {
+        basic:    { label: 'Basic',    emoji: '🟢', rarityPool: ['Common', 'Uncommon'],   dustCost: 10,  goldCost: 500,   sacrifices: [{ rarity: 'Common', count: 5 }],                                  timerHours: 2,  xp: 15  },
+        advanced: { label: 'Advanced', emoji: '🔵', rarityPool: ['Uncommon', 'Rare'],     dustCost: 25,  goldCost: 2000,  sacrifices: [{ rarity: 'Uncommon', count: 4 }, { rarity: 'Rare', count: 2 }],   timerHours: 4,  xp: 35  },
+        arcane:   { label: 'Arcane',   emoji: '🟣', rarityPool: ['Rare', 'Epic'],         dustCost: 50,  goldCost: 5000,  sacrifices: [{ rarity: 'Rare', count: 5 }, { rarity: 'Epic', count: 1 }],       timerHours: 8,  xp: 60  },
+        master:   { label: 'Master',   emoji: '🟡', rarityPool: ['Epic', 'Legendary'],    dustCost: 100, goldCost: 12000, sacrifices: [{ rarity: 'Epic', count: 3 }, { rarity: 'Legendary', count: 1 }],  timerHours: 16, xp: 100 },
+    };
+
+    static EXPEDITION_DOMAINS = {
+        potions:   { label: 'Alchemy',   emoji: '🧪', filter: (item) => item.type === 'potion' },
+        equipment: { label: 'Forging',   emoji: '⚔️', filter: (item) => item.type === 'equipment' },
+    };
+
+    static TIER_ORDER = ['basic', 'advanced', 'arcane', 'master'];
+
+    static getExpeditionConfig(effects) {
+        return effects?.expedition || { boardSlots: 2, maxTier: 'basic', timerReduction: 0, refreshHours: 24 };
+    }
+
+    static getAvailableTiers(effects) {
+        const config = this.getExpeditionConfig(effects);
+        const maxIdx = this.TIER_ORDER.indexOf(config.maxTier);
+        return this.TIER_ORDER.slice(0, maxIdx + 1);
+    }
+
+    static needsBoardRefresh(lab, effects) {
+        const config = this.getExpeditionConfig(effects);
+        const last = lab.researchExpeditions?.lastBoardRefresh;
+        if (!last) return true;
+        const refreshMs = (config.refreshHours || 24) * 60 * 60 * 1000;
+        return (Date.now() - new Date(last).getTime()) >= refreshMs;
+    }
+
+    static getTimeUntilRefresh(lab, effects) {
+        const config = this.getExpeditionConfig(effects);
+        const last = lab.researchExpeditions?.lastBoardRefresh;
+        if (!last) return 0;
+        const refreshMs = (config.refreshHours || 24) * 60 * 60 * 1000;
+        const elapsed = Date.now() - new Date(last).getTime();
+        return Math.max(0, refreshMs - elapsed);
+    }
+
+    static generateExpeditionBoard(lab, player, effects) {
+        const config = this.getExpeditionConfig(effects);
+        const availableTiers = this.getAvailableTiers(effects);
+        const boardSlots = config.boardSlots || 2;
+
+        const board = [];
+        // Shuffle domains so each slot gets a different domain when possible
+        const domains = Object.keys(this.EXPEDITION_DOMAINS)
+            .sort(() => Math.random() - 0.5);
+
+        for (let i = 0; i < boardSlots; i++) {
+            // Cycle through shuffled domains to ensure variety
+            const domain = domains[i % domains.length];
+
+            // Pick a random tier from available
+            const tierKey = availableTiers[Math.floor(Math.random() * availableTiers.length)];
+            const tierData = this.EXPEDITION_TIERS[tierKey];
+
+            // Check if any undiscovered recipes exist for this domain+rarity
+            const hasRecipes = this._hasUndiscoveredRecipes(player, domain, tierData.rarityPool);
+            if (!hasRecipes) {
+                // Try other domains as fallback
+                let found = false;
+                for (const fallbackDomain of domains) {
+                    if (fallbackDomain === domain) continue;
+                    if (this._hasUndiscoveredRecipes(player, fallbackDomain, tierData.rarityPool)) {
+                        const adjustedTimer = tierData.timerHours * (1 - (config.timerReduction || 0));
+                        board.push({
+                            id: `exp_${Date.now()}_${i}`,
+                            domain: fallbackDomain,
+                            tier: tierKey,
+                            rarityPool: tierData.rarityPool,
+                            dustCost: tierData.dustCost,
+                            goldCost: tierData.goldCost,
+                            sacrifices: tierData.sacrifices,
+                            timerHours: Math.max(0.005, parseFloat(adjustedTimer.toFixed(3))),
+                        });
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) continue;
+            } else {
+                // Apply timer reduction from research station
+                const adjustedTimer = tierData.timerHours * (1 - (config.timerReduction || 0));
+
+                board.push({
+                    id: `exp_${Date.now()}_${i}`,
+                    domain,
+                    tier: tierKey,
+                    rarityPool: tierData.rarityPool,
+                    dustCost: tierData.dustCost,
+                    goldCost: tierData.goldCost,
+                    sacrifices: tierData.sacrifices,
+                    timerHours: Math.max(0.005, parseFloat(adjustedTimer.toFixed(3))),
+                });
+            }
         }
 
-        const lastTick = lab.lastResearchTick;
-        const elapsedMinutes = (now - lastTick) / 60000;
-        if (elapsedMinutes < interval) return false;
+        if (!lab.researchExpeditions) lab.researchExpeditions = {};
+        lab.researchExpeditions.board = board;
+        lab.researchExpeditions.lastBoardRefresh = new Date();
+        lab.markModified?.('researchExpeditions');
+        return board;
+    }
 
-        const ticks = Math.floor(elapsedMinutes / interval);
-        if (ticks <= 0) return false;
+    static _hasUndiscoveredRecipes(player, domain, rarityPool) {
+        const domainInfo = this.EXPEDITION_DOMAINS[domain];
+        if (!domainInfo) return false;
 
-        lab.researchPoints += points * ticks;
-        lab.lastResearchTick = new Date(lastTick.getTime() + ticks * interval * 60000);
-        return true;
+        return Object.entries(GameData.recipes || {}).some(([id, recipe]) => {
+            const item = GameData.getItem(recipe.result?.itemId);
+            if (!item) return false;
+            if (!domainInfo.filter(item)) return false;
+            if (!rarityPool.includes(item.rarity)) return false;
+            const isKnown = player.grimoire?.includes(id) || player.craftingJournal?.includes(id);
+            return !isKnown;
+        });
+    }
+
+    static _getUndiscoveredRecipes(player, domain, rarityPool) {
+        const domainInfo = this.EXPEDITION_DOMAINS[domain];
+        if (!domainInfo) return [];
+
+        return Object.entries(GameData.recipes || {}).filter(([id, recipe]) => {
+            const item = GameData.getItem(recipe.result?.itemId);
+            if (!item) return false;
+            if (!domainInfo.filter(item)) return false;
+            if (!rarityPool.includes(item.rarity)) return false;
+            const isKnown = player.grimoire?.includes(id) || player.craftingJournal?.includes(id);
+            return !isKnown;
+        }).map(([id, data]) => ({
+            id,
+            data,
+            item: GameData.getItem(data.result.itemId)
+        }));
+    }
+
+    static canAffordExpedition(player, expedition) {
+        if ((player.arcaneDust || 0) < expedition.dustCost) return { can: false, reason: 'Not enough Arcane Dust' };
+        if ((player.gold || 0) < expedition.goldCost) return { can: false, reason: 'Not enough Gold' };
+
+        // Check sacrifices
+        for (const sac of expedition.sacrifices) {
+            const available = this.getIngredientsByRarity(player, sac.rarity)
+                .reduce((sum, ing) => sum + ing.quantity, 0);
+            if (available < sac.count) {
+                return { can: false, reason: `Need ${sac.count}x ${sac.rarity} ingredients (have ${available})` };
+            }
+        }
+        return { can: true };
+    }
+
+    static getIngredientsByRarity(player, rarity) {
+        if (!player.inventory) return [];
+        const results = [];
+        for (const inv of player.inventory) {
+            if (inv.quantity <= 0) continue;
+            const item = GameData.getItem(inv.itemId);
+            if (!item) continue;
+            if (item.rarity !== rarity) continue;
+            if (!['ingredient', 'crafting_material'].includes(item.type)) continue;
+            results.push({ itemId: inv.itemId, name: item.name, quantity: inv.quantity });
+        }
+        return results;
+    }
+
+    static startExpedition(player, lab, expeditionId, sacrificeSelections = {}) {
+        const board = lab.researchExpeditions?.board || [];
+        const expedition = board.find(e => e.id === expeditionId);
+        if (!expedition) return { success: false, error: 'Research not found on board.' };
+
+        // Check if already active
+        if (lab.researchExpeditions?.active?.expeditionId) {
+            return { success: false, error: 'A research is already in progress.' };
+        }
+
+        // Check dust + gold
+        if ((player.arcaneDust || 0) < expedition.dustCost) return { success: false, error: 'Not enough Arcane Dust.' };
+        if ((player.gold || 0) < expedition.goldCost) return { success: false, error: 'Not enough Gold.' };
+
+        // Validate sacrifice selections
+        for (const sac of expedition.sacrifices) {
+            const selectedItems = sacrificeSelections[sac.rarity] || [];
+            if (selectedItems.length === 0) {
+                return { success: false, error: `Select ${sac.rarity} ingredients to sacrifice.` };
+            }
+            let totalAvailable = 0;
+            for (const itemId of selectedItems) {
+                const inv = player.inventory.find(i => i.itemId === itemId);
+                totalAvailable += inv?.quantity || 0;
+            }
+            if (totalAvailable < sac.count) {
+                return { success: false, error: `Not enough ${sac.rarity} ingredients from your selection (need ${sac.count}).` };
+            }
+        }
+
+        // Deduct costs
+        player.arcaneDust -= expedition.dustCost;
+        player.gold -= expedition.goldCost;
+
+        // Consume selected ingredients
+        for (const sac of expedition.sacrifices) {
+            let remaining = sac.count;
+            const selectedItems = sacrificeSelections[sac.rarity] || [];
+            for (const itemId of selectedItems) {
+                if (remaining <= 0) break;
+                const inv = player.inventory.find(i => i.itemId === itemId);
+                if (!inv) continue;
+                const take = Math.min(remaining, inv.quantity);
+                inv.quantity -= take;
+                remaining -= take;
+            }
+        }
+        player.inventory = player.inventory.filter(inv => inv.quantity > 0);
+        player.markModified?.('inventory');
+
+        // Start research
+        const now = new Date();
+        const completesAt = new Date(now.getTime() + expedition.timerHours * 60 * 60 * 1000);
+
+        lab.researchExpeditions.active = {
+            expeditionId: expedition.id,
+            startedAt: now,
+            completesAt,
+            domain: expedition.domain,
+            tier: expedition.tier,
+            rarityPool: expedition.rarityPool,
+        };
+
+        // Remove from board
+        lab.researchExpeditions.board = board.filter(e => e.id !== expeditionId);
+        lab.markModified?.('researchExpeditions');
+        player.markModified?.('arcaneDust');
+        player.markModified?.('gold');
+
+        return { success: true, completesAt, expedition };
+    }
+
+    static collectExpedition(player, lab) {
+        const active = lab.researchExpeditions?.active;
+        if (!active?.expeditionId) return { success: false, error: 'No active expedition.' };
+
+        const now = new Date();
+        if (now < new Date(active.completesAt)) {
+            return { success: false, error: 'Expedition is still in progress.' };
+        }
+
+        // Find a random undiscovered recipe
+        const candidates = this._getUndiscoveredRecipes(player, active.domain, active.rarityPool);
+        if (!candidates.length) {
+            // Clear active
+            lab.researchExpeditions.active = { expeditionId: null, startedAt: null, completesAt: null, domain: null, tier: null, rarityPool: [] };
+            lab.markModified?.('researchExpeditions');
+            return { success: false, error: 'No undiscovered recipes available for this expedition type.' };
+        }
+
+        const recipe = candidates[Math.floor(Math.random() * candidates.length)];
+
+        // Unlock recipe — potions go to grimoire, everything else to craftingJournal
+        if (recipe.item.type === 'potion') {
+            if (!player.grimoire) player.grimoire = [];
+            player.grimoire.push(recipe.id);
+            player.markModified?.('grimoire');
+        } else {
+            if (!player.craftingJournal) player.craftingJournal = [];
+            player.craftingJournal.push(recipe.id);
+            player.markModified?.('craftingJournal');
+        }
+
+        // Award XP
+        const tierData = this.EXPEDITION_TIERS[active.tier];
+        const xpReward = tierData?.xp || 15;
+        player.xp = (player.xp || 0) + xpReward;
+        player.markModified?.('xp');
+
+        // Clear active
+        lab.researchExpeditions.active = { expeditionId: null, startedAt: null, completesAt: null, domain: null, tier: null, rarityPool: [] };
+        lab.markModified?.('researchExpeditions');
+
+        return { success: true, recipe, xp: xpReward };
+    }
+
+    static refreshBoard(player, lab, effects) {
+        const REFRESH_COST = 15;
+        if ((player.arcaneDust || 0) < REFRESH_COST) {
+            return { success: false, error: `Need ${REFRESH_COST} Arcane Dust to force-refresh the board.` };
+        }
+        player.arcaneDust -= REFRESH_COST;
+        player.markModified?.('arcaneDust');
+        this.generateExpeditionBoard(lab, player, effects);
+        return { success: true };
     }
 
     static processArcaneReactor(lab, effects, now) {

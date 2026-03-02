@@ -189,7 +189,7 @@ module.exports = {
             ctx.fillText(formatNumber(player.gold), 145, 345);
             
             try {
-                const dustIcon = await loadImage(path.join(process.cwd(), 'assets/icons/arcane_dust.png'));
+                const dustIcon = await loadImage(path.join(process.cwd(), 'assets/icons/arcaneDust.png'));
                 ctx.drawImage(dustIcon, 300, 310, 50, 50);
             } catch (err) { console.error(`Failed to load dust icon: ${err.message}`); }
 

@@ -75,7 +75,7 @@ function buildInventoryContainer(player, user, sortedItems, page, totalPages, ac
     // ── Header ──
     const totalItemCount = player.inventory.reduce((sum, i) => sum + i.quantity, 0);
     let header = `### 🎒 ${user.username}'s Inventory\n`;
-    header += `${e.gold} **${player.gold.toLocaleString()}** Gold  •  ${e.arcane_dust} **${player.arcaneDust.toLocaleString()}** Arcane Dust  •  📦 **${totalItemCount}** Items`;
+    header += `${e.gold} **${player.gold.toLocaleString()}** Gold  •  ${e.arcaneDust} **${player.arcaneDust.toLocaleString()}** Arcane Dust  •  📦 **${totalItemCount}** Items`;
 
     container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent(header)
@@ -137,6 +137,9 @@ function buildInventoryContainer(player, user, sortedItems, page, totalPages, ac
         const start = page * ITEMS_PER_PAGE;
         const pageItems = sortedItems.slice(start, start + ITEMS_PER_PAGE);
 
+        // Figure out the maximum quantity length on this page for even padding
+        const maxQtyLen = Math.max(2, ...pageItems.map(item => item.quantity.toString().length));
+
         let content = '';
         // Track the type of the last item on the previous page so we know
         // whether to print a type header for the first item on this page
@@ -157,14 +160,16 @@ function buildInventoryContainer(player, user, sortedItems, page, totalPages, ac
                 content += `${meta.emoji} **${meta.label}**\n`;
                 lastType = itemData.type;
             }
+
+            const paddedQty = invItem.quantity.toString().padStart(maxQtyLen, '0');
             
-            content += `> ${itemEmoji} \`${invItem.quantity}x\` **${itemData.name}** *(${itemData.rarity})*\n`;
-            /*
+            // content += `> ${itemEmoji} \`${invItem.quantity}x\` **${itemData.name}** *${itemData.rarity}*\n`;
+            
             const itemRarityStr = itemData.rarity || 'Common';
             const rarityEmoji = config.emojis[itemRarityStr.charAt(0).toUpperCase() + itemRarityStr.slice(1).toLowerCase()] || '⬜';
 
-            content += `> ${itemEmoji} \`${invItem.quantity}x\` **${itemData.name}** ${rarityEmoji}\n`;
-            */
+            content += `> ${itemEmoji} \`${paddedQty}x\` **${itemData.name}** ${rarityEmoji}\n`;
+            
         });
 
         container.addTextDisplayComponents(

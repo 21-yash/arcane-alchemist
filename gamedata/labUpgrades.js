@@ -46,16 +46,16 @@ module.exports = {
 
     research_station: {
         name: 'Research Station',
-        description: 'Generates research points for discovering new recipes',
+        description: 'Upgrades your expedition board with better tiers and faster timers',
         type: 'research',
         maxLevel: 5,
         costs: [3000, 8000, 18000, 35000, 60000],
         effects: [
-            { level: 1, researchGeneration: { points: 1, interval: 120 } }, 
-            { level: 2, researchGeneration: { points: 2, interval: 110 } },
-            { level: 3, researchGeneration: { points: 3, interval: 100 } },
-            { level: 4, researchGeneration: { points: 5, interval: 100 } },
-            { level: 5, researchGeneration: { points: 8, interval: 100 } }
+            { level: 1, expedition: { boardSlots: 2, maxTier: 'basic', timerReduction: 0 } },
+            { level: 2, expedition: { boardSlots: 2, maxTier: 'advanced', timerReduction: 0.1 } },
+            { level: 3, expedition: { boardSlots: 3, maxTier: 'arcane', timerReduction: 0.2 } },
+            { level: 4, expedition: { boardSlots: 3, maxTier: 'master', timerReduction: 0.3 } },
+            { level: 5, expedition: { boardSlots: 3, maxTier: 'master', timerReduction: 0.4, refreshHours: 18 } }
         ]
     },
 

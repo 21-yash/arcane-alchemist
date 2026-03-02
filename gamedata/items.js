@@ -17,18 +17,18 @@ module.exports = {
         source: 'voting',
         usable: false
     },
-    'uncommon_vote_crate': {
-        name: 'Uncommon Vote Crate',
-        type: 'crate',
-        rarity: 'Uncommon',
-        description: 'A refined crate with better chances for valuable items!',
-        source: 'voting',
-        usable: false
-    },
     'rare_vote_crate': {
         name: 'Rare Vote Crate',
         type: 'crate',
         rarity: 'Rare',
+        description: 'A refined crate with better chances for valuable items!',
+        source: 'voting',
+        usable: false
+    },
+    'epic_vote_crate': {
+        name: 'Epic Vote Crate',
+        type: 'crate',
+        rarity: 'Epic',
         description: 'A mystical crate brimming with powerful rewards!',
         source: 'voting',
         usable: false
@@ -371,24 +371,6 @@ module.exports = {
         source: 'brewing',
         effect: { type: 'special', ability: 'fear_strike', chance: 0.30, duration: 3 * 60 * 60 * 1000 },
         usable: true
-    },
-    'essence_fusion_elixir': {
-        name: 'Essence Fusion Elixir',
-        type: 'potion',
-        rarity: 'Epic',
-        description: 'A complex brew that temporarily combines multiple elemental powers.',
-        source: 'brewing',
-        effect: { type: 'multi_element', elements: ['fire', 'ice', 'storm'], damage_boost: 20, duration: 2 * 60 * 60 * 1000 },
-        usable: false
-    },
-    'crystal_clarity_potion': {
-        name: 'Crystal Clarity Potion',
-        type: 'potion',
-        rarity: 'Rare',
-        description: 'A clear potion that sharpens perception and reveals weaknesses.',
-        source: 'brewing',
-        effect: { type: 'special', ability: 'weakness_detection', bonus_luck: 25, duration: 60 * 60 * 1000 },
-        usable: false
     },
 
     // --- EQUIPMENT (Crafting/Drops) ---

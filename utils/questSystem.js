@@ -229,7 +229,7 @@ async function grantCompletionRewards(playerId, completions, message) {
                 let rewardText = '';
                 if (r.xp) rewardText += `+**${r.xp}** XP  `;
                 if (r.gold) rewardText += `${e.gold} +**${r.gold}**  `;
-                if (r.arcaneDust) rewardText += `${e.arcane_dust} +**${r.arcaneDust}**  `;
+                if (r.arcaneDust) rewardText += `${e.arcaneDust} +**${r.arcaneDust}**  `;
                 if (r.items) {
                     rewardText += r.items.map(i => {
                         const itemEmoji = e[i.itemId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())] || '';
