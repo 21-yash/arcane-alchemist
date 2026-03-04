@@ -5,12 +5,13 @@ const SkillTree = require('../../models/SkillTree');
 const { createErrorEmbed, createSuccessEmbed, createInfoEmbed, createCustomEmbed } = require('../../utils/embed');
 const GameData = require('../../utils/gameData');
 const CommandHelpers = require('../../utils/commandHelpers');
+const allSkillTrees = require('../../gamedata/skillTrees');
 
 module.exports = {
     name: 'skills',
     description: 'Manage your Pal\'s skill tree and unlock new abilities.',
     aliases: ['skill', 'tree'],
-    cooldown: 5,
+    cooldown: 15,
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
@@ -65,7 +66,10 @@ module.exports = {
                 await skillTree.save();
             }
 
-            await this.showSkillTree(message, pal, palData, typeSkills, skillTree, client);
+            // Build the effective skill set (handles inheritance)
+            const effectiveSkills = buildEffectiveSkillSet(palData.type, skillTree);
+
+            await this.showSkillTree(message, pal, palData, effectiveSkills, skillTree, client);
 
         } catch (error) {
             console.error('Skills command error:', error);
@@ -75,16 +79,21 @@ module.exports = {
         }
     },
 
-    async showSkillTree(message, pal, palData, typeSkills, skillTree, client) {
+    async showSkillTree(message, pal, palData, effectiveSkills, skillTree, client) {
+        const hasInheritance = effectiveSkills.some(s => s.inherited);
+
         const generateSkillEmbed = () => {
+            const treeName = allSkillTrees[palData.type]?.name || palData.type;
+            const inheritLabel = hasInheritance ? ' *(Hybrid)*' : '';
             const embed = createCustomEmbed(
-                `🌟 ${pal.nickname}'s ${typeSkills.name}`,
+                `🌟 ${pal.nickname}'s ${treeName}${inheritLabel}`,
                 `**Level:** ${pal.level} | **Available Skill Points:** ${skillTree.skillPoints}\n\n`,
                 '#9B59B6'
             );
 
             let skillDescription = '';
-            Object.entries(typeSkills.skills).forEach(([skillId, skill]) => {
+            for (const entry of effectiveSkills) {
+                const { skillId, skill, inherited, fromType, slot } = entry;
                 const unlockedSkill = skillTree.unlockedSkills.find(s => s.skillId === skillId);
                 const currentLevel = unlockedSkill?.level || 0;
                 const maxLevel = skill.maxLevel;
@@ -93,55 +102,51 @@ module.exports = {
                 if (currentLevel > 0) statusIcon = '⭐'; // Unlocked
                 if (currentLevel === maxLevel) statusIcon = '✨'; // Maxed
 
-                skillDescription += `${statusIcon} **${skill.name}** [${currentLevel}/${maxLevel}]\n`;
+                const inheritTag = inherited ? ` 🧬 *(${fromType})*` : '';
+                skillDescription += `${statusIcon} **${skill.name}** [${currentLevel}/${maxLevel}]${inheritTag}\n`;
                 skillDescription += `*${skill.description}*\n`;
                 
-                // Show current effect if unlocked
                 if (currentLevel > 0) {
                     const effect = skill.effects[currentLevel - 1];
                     skillDescription += `Current: ${this.formatEffectBonus(effect.bonus)}\n`;
                 }
                 
-                // Show next level effect if can be upgraded
                 if (currentLevel < maxLevel) {
                     const nextEffect = skill.effects[currentLevel];
                     skillDescription += `Next (${currentLevel + 1}): ${this.formatEffectBonus(nextEffect.bonus)}\n`;
                 }
                 
                 skillDescription += '\n';
-            });
+            }
 
             embed.setDescription(embed.data.description + skillDescription);
             return embed;
         };
 
         const generateSkillSelect = () => {
-            const availableSkills = Object.entries(typeSkills.skills)
-                .filter(([skillId, skill]) => {
-                    const unlockedSkill = skillTree.unlockedSkills.find(s => s.skillId === skillId);
+            const availableSkills = effectiveSkills
+                .filter(entry => {
+                    const unlockedSkill = skillTree.unlockedSkills.find(s => s.skillId === entry.skillId);
                     const currentLevel = unlockedSkill?.level || 0;
-                    
-                    // Can upgrade if not maxed and has skill points
-                    return currentLevel < skill.maxLevel && skillTree.skillPoints > 0 && this.canUnlockSkill(skillId, skill, skillTree);
+                    return currentLevel < entry.skill.maxLevel && skillTree.skillPoints > 0 && 
+                        this.canUnlockSkillMixed(entry, effectiveSkills, skillTree);
                 })
-                .slice(0, 25); // Discord limit
+                .slice(0, 25);
 
-            if (availableSkills.length === 0) {
-                return null;
-            }
+            if (availableSkills.length === 0) return null;
 
             return new StringSelectMenuBuilder()
                 .setCustomId('upgrade_skill')
                 .setPlaceholder('Choose a skill to upgrade...')
                 .addOptions(
-                    availableSkills.map(([skillId, skill]) => {
-                        const unlockedSkill = skillTree.unlockedSkills.find(s => s.skillId === skillId);
+                    availableSkills.map(entry => {
+                        const unlockedSkill = skillTree.unlockedSkills.find(s => s.skillId === entry.skillId);
                         const currentLevel = unlockedSkill?.level || 0;
-                        
+                        const inheritTag = entry.inherited ? ' 🧬' : '';
                         return {
-                            label: `${skill.name} (${currentLevel}/${skill.maxLevel})`,
-                            description: skill.description.substring(0, 100),
-                            value: skillId
+                            label: `${entry.skill.name} (${currentLevel}/${entry.skill.maxLevel})${inheritTag}`,
+                            description: entry.skill.description.substring(0, 100),
+                            value: entry.skillId
                         };
                     })
                 );
@@ -168,10 +173,11 @@ module.exports = {
         collector.on('collect', async (i) => {
             if (i.customId === 'upgrade_skill') {
                 const skillId = i.values[0];
-                const skill = typeSkills.skills[skillId];
+                const entry = effectiveSkills.find(e => e.skillId === skillId);
+                const skill = entry?.skill;
                 
                 // Double-check requirements
-                if (!this.canUnlockSkill(skillId, skill, skillTree) || skillTree.skillPoints <= 0) {
+                if (!entry || !this.canUnlockSkillMixed(entry, effectiveSkills, skillTree) || skillTree.skillPoints <= 0) {
                     return i.reply({
                         embeds: [createErrorEmbed('Cannot Upgrade', 'You cannot upgrade this skill right now.')],
                         ephemeral: true
@@ -217,6 +223,40 @@ module.exports = {
             }
         }
         return true;
+    },
+
+    /**
+     * Check if a skill can be unlocked in a mixed/inherited tree.
+     * Instead of checking prerequisites from the original type, we check
+     * that the skills at earlier slots are unlocked (slot-based prereqs).
+     */
+    canUnlockSkillMixed(entry, effectiveSkills, skillTree) {
+        // Slots 0 & 1 (base skills) have no prerequisites
+        if (entry.slot <= 1) return true;
+
+        // Slot 2 (advanced): requires at least 1 base skill unlocked
+        if (entry.slot === 2) {
+            const baseSkills = effectiveSkills.filter(e => e.slot <= 1);
+            return baseSkills.some(base => {
+                const unlocked = skillTree.unlockedSkills.find(s => s.skillId === base.skillId);
+                return unlocked && unlocked.level >= 1;
+            });
+        }
+
+        // Slot 3 (ultimate): requires slot 2 and at least 1 base skill unlocked
+        if (entry.slot === 3) {
+            const advancedSkill = effectiveSkills.find(e => e.slot === 2);
+            const advUnlocked = advancedSkill && skillTree.unlockedSkills.find(s => s.skillId === advancedSkill.skillId);
+            if (!advUnlocked || advUnlocked.level < 1) return false;
+
+            const baseSkills = effectiveSkills.filter(e => e.slot <= 1);
+            return baseSkills.some(base => {
+                const unlocked = skillTree.unlockedSkills.find(s => s.skillId === base.skillId);
+                return unlocked && unlocked.level >= 1;
+            });
+        }
+
+        return false;
     },
 
     formatEffectBonus(bonus) {
@@ -441,3 +481,51 @@ module.exports = {
         return effects.join(', ');
     }
 };
+
+/**
+ * Build the effective skill set for a pet, merging default type skills
+ * with any inherited skills from breeding.
+ * Returns array of { slot, skillId, skill (data), fromType, inherited (bool) }
+ */
+function buildEffectiveSkillSet(petType, skillTree) {
+    const typeTree = allSkillTrees[petType];
+    if (!typeTree?.slots) return [];
+
+    const result = [];
+
+    for (let slot = 0; slot < typeTree.slots.length; slot++) {
+        // Check for inherited override at this slot
+        const custom = skillTree.customSkillSet?.find(c => c.slot === slot);
+
+        if (custom && custom.fromType !== petType) {
+            // Inherited skill from another type
+            const sourceTree = allSkillTrees[custom.fromType];
+            const skillData = sourceTree?.skills?.[custom.skillId];
+            if (skillData) {
+                result.push({
+                    slot,
+                    skillId: custom.skillId,
+                    skill: skillData,
+                    fromType: custom.fromType,
+                    inherited: true
+                });
+                continue;
+            }
+        }
+
+        // Default: use the pet's own type skill at this slot
+        const defaultSkillId = typeTree.slots[slot];
+        const defaultSkill = typeTree.skills[defaultSkillId];
+        if (defaultSkill) {
+            result.push({
+                slot,
+                skillId: defaultSkillId,
+                skill: defaultSkill,
+                fromType: petType,
+                inherited: false
+            });
+        }
+    }
+
+    return result;
+}

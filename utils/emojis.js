@@ -7,6 +7,7 @@ const emojis = {
     warning: config.emojis.warning || '⚠️',
     info: config.emojis.info || 'ℹ️',
     loading: config.emojis.loading || '⏳',
+    clock: config.emojis.clock || '⏱',
     first: config.emojis.first || '⏮️',
     previous: config.emojis.previous || '◀️',
     next: config.emojis.next || '▶️',

@@ -24,11 +24,13 @@ const PlayerSchema = new mongoose.Schema({
 
     hatchingSlot: {
         eggId: { type: String, default: null },
+        eggDocId: { type: Number, default: null },   // Egg document's eggId for inheritance
         hatchesAt: { type: Date, default: null }
     },
     labHatchingSlots: {
         type: [{
             eggId: { type: String, default: null },
+            eggDocId: { type: Number, default: null }, // Egg document's eggId for inheritance
             hatchesAt: { type: Date, default: null }
         }],
         default: []

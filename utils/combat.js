@@ -309,12 +309,22 @@ class SkillManager {
         }
 
         try {
-            const typeSkills = allSkillTrees[creature.type]?.skills || {};
+            // Build a lookup for inherited skills: skillId -> fromType
+            const inheritedMap = {};
+            if (skillTree.customSkillSet?.length) {
+                for (const custom of skillTree.customSkillSet) {
+                    inheritedMap[custom.skillId] = custom.fromType;
+                }
+            }
 
             for (let i = 0; i < skillTree.unlockedSkills.length; i++) {
                 const unlockedSkill = skillTree.unlockedSkills[i];
                 
                 if (!unlockedSkill.skillId || !unlockedSkill.level) continue;
+
+                // Resolve the correct type tree for this skill
+                const skillSourceType = inheritedMap[unlockedSkill.skillId] || creature.type;
+                const typeSkills = allSkillTrees[skillSourceType]?.skills || {};
 
                 const skillData = typeSkills[unlockedSkill.skillId];
                 if (!skillData?.effects?.[unlockedSkill.level - 1]) continue;

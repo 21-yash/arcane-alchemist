@@ -790,6 +790,54 @@ class CommandHelpers {
             return '';
         }
     } 
+
+    // ── Discord Timestamp Helpers ────────────────────────────────
+
+    /**
+     * Generate a Discord dynamic timestamp string.
+     * Discord renders these in the user's local timezone and updates live.
+     *
+     * @param {Date|number} time - Date object, Unix timestamp (seconds), or ms timestamp
+     * @param {string} style - Timestamp style flag:
+     *   't' = Short Time       (16:20)
+     *   'T' = Long Time        (16:20:30)
+     *   'd' = Short Date       (20/04/2021)
+     *   'D' = Long Date        (20 April 2021)
+     *   'f' = Short Date/Time  (20 April 2021 16:20)  [default]
+     *   'F' = Long Date/Time   (Tuesday, 20 April 2021 16:20)
+     *   'R' = Relative         (2 months ago, in 5 minutes)
+     * @returns {string} Discord timestamp markdown, e.g. <t:1618953600:R>
+     */
+    static timestamp(time, style = 'f') {
+        let unix;
+        if (time instanceof Date) {
+            unix = Math.floor(time.getTime() / 1000);
+        } else if (typeof time === 'number') {
+            // If it looks like milliseconds (>year 2100 in seconds), convert
+            unix = time > 4102444800 ? Math.floor(time / 1000) : Math.floor(time);
+        } else {
+            unix = Math.floor(Date.now() / 1000);
+        }
+        return `<t:${unix}:${style}>`;
+    }
+
+    /**
+     * Relative timestamp — shows "in 5 minutes", "3 hours ago", etc.
+     * @param {Date|number} time - Date object or timestamp
+     * @returns {string} Discord relative timestamp
+     */
+    static relativeTime(time) {
+        return CommandHelpers.timestamp(time, 'R');
+    }
+
+    /**
+     * Full date/time timestamp — shows "Tuesday, 20 April 2021 16:20"
+     * @param {Date|number} time - Date object or timestamp
+     * @returns {string} Discord long date/time timestamp
+     */
+    static fullTime(time) {
+        return CommandHelpers.timestamp(time, 'F');
+    }
 }
 
 module.exports = CommandHelpers;

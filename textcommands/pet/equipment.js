@@ -1,39 +1,35 @@
-const { createErrorEmbed, createWarningEmbed, createCustomEmbed, createArgEmbed } = require('../../utils/embed');
-const Player = require('../../models/Player');
+
+const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, MessageFlags } = require('discord.js');
 const Pet = require('../../models/Pet');
+const { createErrorEmbed } = require('../../utils/embed');
 const GameData = require('../../utils/gameData');
 const CommandHelpers = require('../../utils/commandHelpers');
+const config = require('../../config/config.json');
+const e = require('../../utils/emojis');
 
-async function formatEquipmentLine(pal, slotName) {
-    const itemId = pal.equipment[slotName];
-    const itemEmoji = CommandHelpers.getItemEmoji(itemId);
-    
-    if (!itemId) {
-        return '*Empty*';
-    }
+const EQUIP_COLOR = 0x5865F2; // Blurple
 
-    const itemData = GameData.getItem(itemId);
-    if (!itemData) {
-        return `${itemEmoji} *Unknown Item (${itemId})*`;
-    }
+const SLOT_META = {
+    weapon:    { label: 'Weapon',    emoji: '⚔️' },
+    offhand:   { label: 'Offhand',   emoji: '🛡️' },
+    head:      { label: 'Head',      emoji: '🪖' },
+    chest:     { label: 'Chest',     emoji: '🧥' },
+    leg:       { label: 'Leggings',  emoji: '👖' },
+    boots:     { label: 'Boots',     emoji: '👢' },
+    accessory: { label: 'Accessory', emoji: '💍' }
+};
 
-    const statStrings = [];
-    if (itemData.stats) {
-        for (const [stat, value] of Object.entries(itemData.stats)) {
-            if (typeof value === 'number') {
-                statStrings.push(`+${value} ${stat.toUpperCase()}`);
-            } else if (typeof value === 'string') {
-                const specialName = value.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                statStrings.push(`*${specialName}*`);
-            }
+function formatStatBonuses(itemData) {
+    if (!itemData?.stats) return '';
+    const parts = [];
+    for (const [stat, value] of Object.entries(itemData.stats)) {
+        if (typeof value === 'number') {
+            parts.push(`+${value} ${stat.toUpperCase()}`);
+        } else if (typeof value === 'string') {
+            parts.push(`*${value.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}*`);
         }
     }
-
-    const statsDisplay = statStrings.length > 0 
-        ? `\n${statStrings.join(' • ')}` 
-        : '';
-
-    return `${itemEmoji} **${itemData.name}**${statsDisplay}`;
+    return parts.length > 0 ? `\n-# ┗ ${parts.join(' • ')}` : '';
 }
 
 module.exports = {
@@ -41,82 +37,90 @@ module.exports = {
     description: 'Shows the equipped items on a Pal.',
     usage: '<pal_id>',
     aliases: ['equipments', 'gear'],
+    cooldown: 10,
+
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
-            if (!playerResult.success) {
-                return message.reply({ embeds: [playerResult.embed] });
-            }
-            const player = playerResult.player;
+            if (!playerResult.success) return message.reply({ embeds: [playerResult.embed] });
+
             if (!args[0]) {
-                return message.reply({ embeds: [
-                    createArgEmbed(prefix, this.name, this.usage)
-                ]});
+                return message.reply({ embeds: [require('../../utils/embed').createArgEmbed(prefix, this.name, this.usage)] });
             }
 
             const shortId = parseInt(args[0]);
-
             const petResult = await CommandHelpers.validatePet(message.author.id, shortId, prefix);
-            if (!petResult.success) {
-                return message.reply({ embeds: [petResult.embed] });
-            }
+            if (!petResult.success) return message.reply({ embeds: [petResult.embed] });
             const pal = petResult.pet;
-
-            // Get pet base data for thumbnail
             const basePetData = GameData.getPet(pal.basePetId);
+            const petEmoji = config.emojis[basePetData?.name] || '🐾';
+            const rarityEmoji = config.emojis[basePetData?.rarity] || '';
 
-            // --- Create the embed with mobile-friendly layout ---
-            const equipmentEmbed = createCustomEmbed(
-                `${pal.nickname}'s Equipment`,
-                `Viewing equipment for **${pal.nickname}** (ID: ${pal.shortId})`,
-                '#5865F2',
-                {
-                    thumbnail: basePetData?.pic || message.author.displayAvatarURL(),
-                    fields: [
-                        { 
-                            name: '• Weapon', 
-                            value: await formatEquipmentLine(pal, 'weapon'), 
-                            inline: false 
-                        },
-                        { 
-                            name: '• Offhand', 
-                            value: await formatEquipmentLine(pal, 'offhand'), 
-                            inline: false 
-                        },
-                        { 
-                            name: '• Head', 
-                            value: await formatEquipmentLine(pal, 'head'), 
-                            inline: false 
-                        },
-                        { 
-                            name: '• Chest', 
-                            value: await formatEquipmentLine(pal, 'chest'), 
-                            inline: false 
-                        },
-                        { 
-                            name: '• Leggings', 
-                            value: await formatEquipmentLine(pal, 'leg'), 
-                            inline: false 
-                        },
-                        { 
-                            name: '• Boots', 
-                            value: await formatEquipmentLine(pal, 'boots'), 
-                            inline: false 
-                        },
-                        { 
-                            name: '• Accessory', 
-                            value: await formatEquipmentLine(pal, 'accessory'), 
-                            inline: false 
-                        }
-                    ],
-                    footer: { 
-                        text: `Owner: ${message.author.username}`, 
-                        iconURL: message.author.displayAvatarURL() 
-                    }
-                }
+            const container = new ContainerBuilder().setAccentColor(EQUIP_COLOR);
+
+            // Header
+            container.addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(
+                    `## ${config.emojis.equipment} ${pal.nickname}'s Equipment\n` +
+                    `${petEmoji} Lv.**${pal.level}** ${basePetData?.name || 'Unknown'}  ${rarityEmoji}`
+                )
             );
 
-            await message.reply({ embeds: [equipmentEmbed] });
+            container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
+
+            // Slots
+            let hasAny = false;
+            let slotsText = '';
+
+            for (const [slotKey, meta] of Object.entries(SLOT_META)) {
+                const itemId = pal.equipment?.[slotKey];
+                if (itemId) {
+                    hasAny = true;
+                    const itemData = GameData.getItem(itemId);
+                    const itemEmoji = CommandHelpers.getItemEmoji(itemId);
+                    const itemRarity = itemData?.rarity ? (config.emojis[itemData.rarity] || '') : '';
+                    slotsText += `${itemEmoji} **${itemData?.name || itemId}** ${itemRarity}${formatStatBonuses(itemData)}\n\n`;
+                } else {
+                    slotsText += `${meta.emoji} ${meta.label}\n-# empty\n\n`;
+                }
+            }
+
+            container.addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(slotsText.trim())
+            );
+
+            if (hasAny) {
+                // Total stat bonuses
+                let totalStats = { hp: 0, atk: 0, def: 0, spd: 0, luck: 0 };
+                for (const slotKey of Object.keys(SLOT_META)) {
+                    const itemId = pal.equipment?.[slotKey];
+                    if (!itemId) continue;
+                    const itemData = GameData.getItem(itemId);
+                    if (!itemData?.stats) continue;
+                    for (const [stat, value] of Object.entries(itemData.stats)) {
+                        if (typeof value === 'number' && totalStats[stat] !== undefined) {
+                            totalStats[stat] += value;
+                        }
+                    }
+                }
+                const bonusParts = Object.entries(totalStats)
+                    .filter(([, v]) => v > 0)
+                    .map(([s, v]) => `+${v} ${s.toUpperCase()}`);
+
+                if (bonusParts.length > 0) {
+                    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
+                    container.addTextDisplayComponents(
+                        new TextDisplayBuilder().setContent(
+                            `-# Total Bonuses: ${bonusParts.join(' • ')}`
+                        )
+                    );
+                }
+            }
+
+            return message.reply({
+                components: [container],
+                flags: MessageFlags.IsComponentsV2
+            });
 
         } catch (error) {
             console.error("Equipment command error:", error);

@@ -303,6 +303,7 @@ module.exports = {
     description: 'View crafting recipes in your master cookbook.',
     usage: '[item_name]',
     aliases: ['recipes', 'crafts'],
+    cooldown: 15,
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);

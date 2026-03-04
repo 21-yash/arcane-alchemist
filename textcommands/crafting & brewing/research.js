@@ -380,7 +380,7 @@ module.exports = {
     description: 'Research in your lab to discover new recipes.',
     usage: '',
     aliases: ['discover'],
-    cooldown: 3,
+    cooldown: 15,
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);

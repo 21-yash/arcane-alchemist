@@ -1,6 +1,7 @@
 module.exports = {
     Beast: {
         name: 'Primal Path',
+        slots: ['pack_hunter', 'feral_instinct', 'blood_frenzy', 'apex_predator'],
         skills: {
             pack_hunter: {
                 name: 'Pack Hunter',
@@ -51,6 +52,7 @@ module.exports = {
     
     Elemental: {
         name: 'Elemental Mastery',
+        slots: ['elemental_affinity', 'status_mastery', 'elemental_shield', 'elemental_storm'],
         skills: {
             elemental_affinity: {
                 name: 'Elemental Affinity',
@@ -99,6 +101,7 @@ module.exports = {
 
     Mystic: {
         name: 'Arcane Wisdom',
+        slots: ['mystic_resonance', 'healing_light', 'celestial_barrier', 'divine_intervention'],
         skills: {
             mystic_resonance: {
                 name: 'Mystic Resonance',
@@ -147,6 +150,7 @@ module.exports = {
 
     Undead: {
         name: 'Necromantic Arts',
+        slots: ['undying_will', 'life_drain', 'dark_ritual', 'lich_transformation'],
         skills: {
             undying_will: {
                 name: 'Undying Will',
@@ -195,6 +199,7 @@ module.exports = {
 
     Mechanical: {
         name: 'Technological Evolution',
+        slots: ['armor_plating', 'system_upgrade', 'perfect_machine', 'energy_core'],
         skills: {
             armor_plating: {
                 name: 'Armor Plating',
@@ -244,6 +249,7 @@ module.exports = {
 
     Abyssal: {
         name: 'Abyssal Depths',
+        slots: ['crushing_pressure', 'abyssal_tide', 'terror_from_below', 'abyssal_devourer'],
         skills: {
             crushing_pressure: {
                 name: 'Crushing Pressure',
@@ -292,6 +298,7 @@ module.exports = {
 
     Aeonic: {
         name: 'Path of the Epoch',
+        slots: ['decay', 'precognition', 'temporal_echo', 'paradox_loop'],
         skills: {
             decay: {
                 name: 'Decay',

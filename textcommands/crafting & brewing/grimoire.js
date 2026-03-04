@@ -339,6 +339,7 @@ module.exports = {
     name: 'grimoire',
     description: 'View potion recipes in your magical grimoire.',
     usage: '[potion_name]',
+    cooldown: 15,
     async execute(message, args, client, prefix) {
         try {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);

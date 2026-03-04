@@ -71,11 +71,12 @@ module.exports = {
             const hasCooldown = cooldownSeconds || command.customCooldown;
 
             if (hasCooldown && message.author.id !== config.ownerId) {
-                const { onCooldown, remaining } = CooldownManager.check(message.author.id, resolvedName);
+                const { onCooldown, expiresAt } = CooldownManager.check(message.author.id, resolvedName);
                 if (onCooldown) {
+                    const CommandHelpers = require('../utils/commandHelpers');
                     const cooldownEmbed = new EmbedBuilder()
                         .setColor('#FF6B6B')
-                        .setDescription(`⏳ **Slow down!** You can use \`${prefix}${resolvedName}\` again in **${remaining}s**.`);
+                        .setDescription(`⏳ **Slow down!** You can use \`${prefix}${resolvedName}\` again ${CommandHelpers.relativeTime(expiresAt)}.`);
                     return message.reply({ embeds: [cooldownEmbed] });
                 }
             }

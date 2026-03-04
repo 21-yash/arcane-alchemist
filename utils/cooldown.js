@@ -17,7 +17,7 @@ class CooldownManager {
      * Checks if a user is currently on cooldown for a specific command.
      * @param {string} userId - The Discord user ID.
      * @param {string} commandName - The name of the command.
-     * @returns {{ onCooldown: boolean, remaining: number }} An object indicating if the user is on cooldown and the remaining time in seconds.
+     * @returns {{ onCooldown: boolean, remaining: number, expiresAt: number }} An object indicating if the user is on cooldown, the remaining time in seconds, and the expiry timestamp (ms).
      */
     static check(userId, commandName) {
         const key = `${userId}-${commandName}`;
@@ -30,7 +30,7 @@ class CooldownManager {
         const remaining = (expiresAt - Date.now()) / 1000;
 
         if (remaining > 0) {
-            return { onCooldown: true, remaining: Math.ceil(remaining) };
+            return { onCooldown: true, remaining: Math.ceil(remaining), expiresAt };
         } else {
             cooldowns.delete(key); // Clean up expired cooldown
             return { onCooldown: false, remaining: 0 };

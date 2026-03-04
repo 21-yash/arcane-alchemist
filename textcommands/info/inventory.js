@@ -229,7 +229,7 @@ module.exports = {
     description: 'View your alchemical ingredients, potions, and equipment.',
     usage: '[@user]',
     aliases: ['inv', 'bag'],
-    cooldown: 3,
+    cooldown: 15,
     async execute(message, args, client, prefix) {
         try {
             const user = message.author;

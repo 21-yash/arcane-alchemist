@@ -38,6 +38,7 @@ const PetSchema = new mongoose.Schema({
     
     currentHp: { type: Number, default: null },
     lastInjuryUpdate: { type: Date, default: Date.now },
+    lastBredAt: { type: Date, default: null },
     potionEffects: { type: [Object], default: [] },
     
 });
