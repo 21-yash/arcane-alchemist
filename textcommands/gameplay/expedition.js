@@ -368,23 +368,48 @@ module.exports = {
             await pal.save();
         }
 
-        // Apply rewards to player
-        player.gold += totalRewards.gold;
-        
-        for (const [itemId, quantity] of Object.entries(totalRewards.items)) {
-            const existingItem = player.inventory.find(item => item.itemId === itemId);
-            if (existingItem) {
-                existingItem.quantity += quantity;
-            } else {
-                player.inventory.push({ itemId, quantity });
-            }
-        }
-
         if (successfulExpeditions > 0) {
-            player.stats.expeditionsCompleted = (player.stats.expeditionsCompleted || 0) + successfulExpeditions;
-        }
+            const incFields = { gold: totalRewards.gold };
+            incFields['stats.expeditionsCompleted'] = successfulExpeditions;
+            
+            // Build bulk write operations for safe array updates
+            const bulkOps = [];
+            
+            // Increment gold and stats
+            bulkOps.push({
+                updateOne: {
+                    filter: { userId: message.author.id },
+                    update: { $inc: incFields }
+                }
+            });
 
-        await player.save();
+            // Handle items
+            for (const [itemId, quantity] of Object.entries(totalRewards.items)) {
+                // Try to increment existing item first
+                bulkOps.push({
+                    updateOne: {
+                        filter: { userId: message.author.id, "inventory.itemId": itemId },
+                        update: { $inc: { "inventory.$.quantity": quantity } }
+                    }
+                });
+                // If it didn't exist, push it
+                bulkOps.push({
+                    updateOne: {
+                        filter: { userId: message.author.id, "inventory.itemId": { $ne: itemId } },
+                        update: { $push: { inventory: { itemId, quantity } } }
+                    }
+                });
+            }
+
+            if (bulkOps.length > 0) {
+                await Player.bulkWrite(bulkOps);
+            }
+        } else if (totalRewards.gold > 0) {
+            await Player.updateOne(
+                { userId: message.author.id },
+                { $inc: { gold: totalRewards.gold } }
+            );
+        }
 
         if (successfulExpeditions > 0) {
             client.emit('expeditionComplete', message.author.id, successfulExpeditions);

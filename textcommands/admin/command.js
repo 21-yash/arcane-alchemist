@@ -2,6 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const DisabledCommand = require('../../models/DisabledCommand');
 const config = require('../../config/config.json');
 const { createArgEmbed } = require('../../utils/embed');
+const { updateDisabledCommandCache } = require('../../utils/permissions');
 
 module.exports = {
     name: 'command',
@@ -61,6 +62,8 @@ module.exports = {
                     reason: reason
                 });
 
+                updateDisabledCommandCache(commandName, message.guild.id, true);
+
                 const embed = new EmbedBuilder()
                     .setColor(config.colors.success)
                     .setTitle(`${config.emojis.disabled} Command Disabled`)
@@ -98,6 +101,8 @@ module.exports = {
 
                 // Enable the command by deleting the entry
                 await DisabledCommand.deleteOne({ commandName, guildId: message.guild.id });
+
+                updateDisabledCommandCache(commandName, message.guild.id, false);
 
                 const embed = new EmbedBuilder()
                     .setColor(config.colors.success)

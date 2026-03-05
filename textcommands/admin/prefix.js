@@ -32,6 +32,9 @@ module.exports = {
                 { upsert: true, new: true } // Options: create if not found, return the new doc
             );
 
+            // Update RAM cache
+            client.prefixes.set(guildId, newPrefix);
+
             await message.reply({ embeds: [
                 createSuccessEmbed('Prefix Updated', `The new server prefix has been set to: \`${newPrefix}\``)
             ]});

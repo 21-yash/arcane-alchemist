@@ -10,6 +10,7 @@ module.exports = {
     async execute(message, args, client, prefix) {
         const sent = await message.reply(`${config.emojis.loading} Calculating ping...`);
         
+        const latency = sent.createdTimestamp - message.createdTimestamp;
         const apiLatency = Math.round(client.ws.ping);
 
         // Determine ping quality
@@ -30,6 +31,7 @@ module.exports = {
             .setTitle(`${config.emojis.ping} Pong!`)
             .setDescription(`**${pingQuality}** connection quality`)
             .addFields([
+                { name: 'Bot Latency', value: `${latency}ms`, inline: true },
                 { name: 'API Latency', value: `${apiLatency}ms`, inline: true }
             ])
             .setTimestamp()

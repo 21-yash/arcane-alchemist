@@ -232,7 +232,6 @@ module.exports = {
     customCooldown: true,
     async execute(message, args, client, prefix) {
 
-
         try {
             let player = await Player.findOne({ userId: message.author.id });
             if (!player) {
@@ -240,8 +239,13 @@ module.exports = {
                     embeds: [createErrorEmbed('No Adventure Started', `You haven't started your journey yet! Use \`${prefix}start\` to begin.`)] 
                 });
             }
-
+            
             const { effects: labEffects } = await LabManager.loadPlayerLab(player);
+
+            // Get cooldown via CooldownManager with lab reduction applied
+            const baseCooldown = 12; // seconds
+            const cooldownReduction = Math.min((labEffects?.forageCooldownReduction || 0) + (labEffects?.globalCooldownReduction || 0), 0.9);
+            const adjustedCooldown = Math.max(1, Math.round(baseCooldown * (1 - cooldownReduction)));
 
             // Determine biome
             let biomeId;
@@ -266,16 +270,31 @@ module.exports = {
                     embeds: [createErrorEmbed('Level Too Low', `You must be level **${biome.levelRequirement}** to forage in the **${biome.name}**.`)] 
                 });
             }
-
+            
             player = await restoreStamina(player, labEffects);
-
-            if (player.stamina < biome.staminaCost) {
+            
+            // Attempt atomic stamina deduction
+            const updatedPlayer = await Player.findOneAndUpdate(
+                { userId: message.author.id, stamina: { $gte: biome.staminaCost } },
+                { 
+                    $inc: { stamina: -biome.staminaCost },
+                    $set: { lastStaminaUpdate: new Date() }
+                },
+                { new: true }
+            );
+            
+            if (!updatedPlayer) {
                 const staminaNeeded = biome.staminaCost - player.stamina;
                 const timeToWaitMinutes = Math.ceil(staminaNeeded / 1) * 2; // Assuming 1 stamina per 2 mins
                 return message.reply({ embeds: [
                     createErrorEmbed('Not Enough Stamina!', `You are too tired. You need **${staminaNeeded}** more stamina.\nPlease wait approximately **${timeToWaitMinutes} minutes**.`)] 
                 });
             }
+            
+            CooldownManager.set(message.author.id, 'forage', adjustedCooldown);
+           
+            // Sync the updated stamina onto the loaded player object
+            player.stamina = updatedPlayer.stamina;
 
             // Get selected pet
             let selectedPet = null;
@@ -338,34 +357,56 @@ module.exports = {
             }
 
             let eventDescription = '';
+            let goldChange = 0;
+
             // Handle event-specific effects
             if (selectedEvent.loseGold && player.gold > 0) {
                 const goldLoss = Math.floor(Math.random() * (selectedEvent.loseGold[1] - selectedEvent.loseGold[0] + 1)) + selectedEvent.loseGold[0];
-                player.gold = Math.max(0, player.gold - goldLoss);
-                eventDescription += `\n*You lost **${goldLoss} gold** during the mishap.*\n`;
+                const actualLoss = Math.min(player.gold, goldLoss);
+                goldChange -= actualLoss;
+                eventDescription += `\n*You lost **${actualLoss} gold** during the mishap.*\n`;
             }
 
             if (selectedEvent.bonusGold) {
                 const baseGold = Math.floor(Math.random() * (selectedEvent.bonusGold[1] - selectedEvent.bonusGold[0] + 1)) + selectedEvent.bonusGold[0];
                 const goldBonus = LabManager.applyGoldBonus(baseGold, labEffects);
-                player.gold += goldBonus;
+                goldChange += goldBonus;
                 eventDescription += `\n*You found an extra **${goldBonus} gold** tucked away!* \n`;
             }
 
-            // Update player stats
-            player.lastStaminaUpdate = new Date();
-            player.stats.forageCount += 1;
+            // Build atomic updates
+            const bulkOps = [];
+            const incFields = { 'stats.forageCount': 1 };
+            
+            if (goldChange !== 0) {
+                incFields.gold = goldChange;
+            }
+
+            bulkOps.push({
+                updateOne: {
+                    filter: { userId: message.author.id },
+                    update: { $inc: incFields, $set: { lastStaminaUpdate: new Date() } }
+                }
+            });
 
             // Add loot to inventory
             let lootDescription = '';
             if (foundLoot.length > 0) {
                 foundLoot.forEach(loot => {
-                    const existingItem = player.inventory.find(i => i.itemId === loot.itemId);
-                    if (existingItem) {
-                        existingItem.quantity += loot.quantity;
-                    } else {
-                        player.inventory.push({ itemId: loot.itemId, quantity: loot.quantity });
-                    }
+                    // Try to increment existing item first
+                    bulkOps.push({
+                        updateOne: {
+                            filter: { userId: message.author.id, "inventory.itemId": loot.itemId },
+                            update: { $inc: { "inventory.$.quantity": loot.quantity } }
+                        }
+                    });
+                    // If it didn't exist, push it
+                    bulkOps.push({
+                        updateOne: {
+                            filter: { userId: message.author.id, "inventory.itemId": { $ne: loot.itemId } },
+                            update: { $push: { inventory: { itemId: loot.itemId, quantity: loot.quantity } } }
+                        }
+                    });
                     
                     const itemData = GameData.getItem(loot.itemId);
                     const rarity = loot.quantity > 1 ? '' : (itemData?.rarity === 'rare' || itemData?.rarity === 'epic' || itemData?.rarity === 'legendary') ? ' ✨' : '';
@@ -374,9 +415,15 @@ module.exports = {
             } else {
                 lootDescription = 'No materials were found this time.';
             }
-            player.stamina -= biome.staminaCost;
 
-            await player.save();
+            if (bulkOps.length > 0) {
+                await Player.bulkWrite(bulkOps);
+            }
+
+            // Sync values to in-memory player for display logic
+            player.gold = Math.max(0, player.gold + goldChange);
+            player.stamina -= biome.staminaCost; // We already deducted it atomically earlier, just sync the obj here
+            player.maxStamina = player.maxStamina; // Just to be safe 
 
             // Create result embed
             const embedColor = eventType === 'rare' ? '#FFD700' : eventType === 'negative' ? '#FF6B6B' : '#4ECDC4';
@@ -456,7 +503,7 @@ module.exports = {
                 
                 const collector = encounterMessage.createMessageComponentCollector({
                     filter: i => i.user.id === message.author.id,
-                    time: 2 * 60 * 1000,
+                    time: 15 * 1000,
                     componentType: ComponentType.Button
                 });
 
@@ -512,12 +559,6 @@ module.exports = {
                     }
                 });
             }
-
-            // Set cooldown via CooldownManager with lab reduction applied
-            const baseCooldown = 12; // seconds
-            const cooldownReduction = Math.min((labEffects?.forageCooldownReduction || 0) + (labEffects?.globalCooldownReduction || 0), 0.9);
-            const adjustedCooldown = Math.max(1, Math.round(baseCooldown * (1 - cooldownReduction)));
-            CooldownManager.set(message.author.id, 'forage', adjustedCooldown);
 
         } catch (error) {
             console.error('Forage command error:', error);

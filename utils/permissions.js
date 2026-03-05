@@ -6,6 +6,68 @@ const config = require('../config/config.json');
 // In-memory cooldown tracking
 const blacklistCooldowns = new Map();
 
+// In-memory caching to prevent massive database latency spikes on every message
+const cache = {
+    blacklists: new Map(), // key: userId_guildId (or userId_global), value: { reason }
+    disabledCommands: new Map(), // key: commandName_guildId, value: true
+    initialized: false
+};
+
+let _initPromise = null;
+
+/**
+ * Initialize the permissions caches from the database
+ */
+async function initPermissionsCache() {
+    if (cache.initialized) return;
+    if (_initPromise) return _initPromise;
+
+    _initPromise = (async () => {
+        try {
+            const allBlacklists = await Blacklist.find().lean();
+            for (const b of allBlacklists) {
+                const key = `${b.userId}_${b.guildId || 'global'}`;
+                cache.blacklists.set(key, { reason: b.reason });
+            }
+
+            const allDisabled = await DisabledCommand.find().lean();
+            for (const d of allDisabled) {
+                cache.disabledCommands.set(`${d.commandName}_${d.guildId}`, true);
+            }
+
+            cache.initialized = true;
+            console.log(`[Permissions] Cached ${cache.blacklists.size} blacklists and ${cache.disabledCommands.size} disabled commands.`);
+        } catch (error) {
+            _initPromise = null;
+            console.error('Error initializing permissions cache:', error);
+            throw error;
+        }
+    })();
+
+    return _initPromise;
+}
+
+/**
+ * Cache mutation helpers for commands that change permissions
+ */
+function updateBlacklistCache(userId, guildId, reason, isAdding) {
+    const key = `${userId}_${guildId || 'global'}`;
+    if (isAdding) {
+        cache.blacklists.set(key, { reason });
+    } else {
+        cache.blacklists.delete(key);
+    }
+}
+
+function updateDisabledCommandCache(commandName, guildId, isAdding) {
+    const key = `${commandName}_${guildId}`;
+    if (isAdding) {
+        cache.disabledCommands.set(key, true);
+    } else {
+        cache.disabledCommands.delete(key);
+    }
+}
+
 /**
  * Check if a user has the required Discord permissions
  * @param {GuildMember} member - The guild member
@@ -50,13 +112,15 @@ function checkBotPermissions(guild, requiredPermissions) {
  */
 async function checkBlacklist(userId, guildId = null) {
     try {
+        if (!cache.initialized) await initPermissionsCache();
+
         // Check for global blacklist first
-        const globalBlacklist = await Blacklist.findOne({ userId, guildId: null });
+        const globalEntry = cache.blacklists.get(`${userId}_global`);
         
         // Check for server-specific blacklist
-        const serverBlacklist = guildId ? await Blacklist.findOne({ userId, guildId }) : null;
+        const serverEntry = guildId ? cache.blacklists.get(`${userId}_${guildId}`) : null;
         
-        const blacklistEntry = globalBlacklist || serverBlacklist;
+        const blacklistEntry = globalEntry || serverEntry;
         
         if (!blacklistEntry) {
             return {
@@ -111,12 +175,8 @@ async function checkBlacklist(userId, guildId = null) {
  */
 async function isCommandDisabled(commandName, guildId) {
     try {
-        const disabledCommand = await DisabledCommand.findOne({
-            commandName,
-            guildId
-        });
-
-        return !!disabledCommand;
+        if (!cache.initialized) await initPermissionsCache();
+        return cache.disabledCommands.has(`${commandName}_${guildId}`);
     } catch (error) {
         console.error('Error checking disabled command:', error);
         return false;
@@ -139,5 +199,8 @@ module.exports = {
     checkUserPermissions,
     checkBotPermissions,
     checkBlacklist,
-    isCommandDisabled
+    isCommandDisabled,
+    initPermissionsCache,
+    updateBlacklistCache,
+    updateDisabledCommandCache
 };

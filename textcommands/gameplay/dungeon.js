@@ -595,17 +595,13 @@ async function runDungeon(interaction, pal, dungeon, client, sessionId) {
             await new Promise((resolve) => setTimeout(resolve, 2000));
         }
 
-        // Main dungeon loop
-        while (currentFloor <= dungeon.floors) {
-            if (!sessionManager.isValid(interaction.user.id, sessionId)) {
-                return;
-            }
+        const renderFloor = async () => {
+            if (!sessionManager.isValid(interaction.user.id, sessionId)) return;
 
             const isBossFloor = currentFloor === dungeon.floors;
             const enemy = Utils.safeGenerateEnemy(dungeon, currentFloor, isBossFloor);
             const enemyType = enemy.type || "Beast";
 
-            // Show floor info
             const floorEmbed = createCustomEmbed(
                 `${dungeon.name} - Floor ${currentFloor}`,
                 `A wild **${enemy.name}** (${enemyType}) appears!`,
@@ -634,41 +630,27 @@ async function runDungeon(interaction, pal, dungeon, client, sessionId) {
                 embeds: [floorEmbed],
                 components: [UIManager.createFightButtons(sessionId)],
             });
+            return { enemy, enemyType };
+        };
 
-            // Wait for action
-            const action = await interaction.channel
-                .awaitMessageComponent({
-                    filter: (i) => i.user.id === interaction.user.id && sessionManager.isValid(i.user.id, sessionId),
-                    time: 5 * 60000,
-                    componentType: ComponentType.Button,
-                })
-                .catch(() => null);
+        let currentEnemyCtx = await renderFloor();
 
-            if (!action) {
-                sessionManager.cleanup(interaction.user.id);
-                await interaction.message.edit({
-                    embeds: [
-                        createWarningEmbed(
-                            "Dungeon Timeout",
-                            "The dungeon exploration timed out. You escaped with the rewards you've gathered so far.",
-                        ),
-                    ],
-                    components: [],
-                });
-                return finalizeDungeon(
-                    interaction,
-                    pal,
-                    sessionRewards,
-                    client,
-                    currentFloor - 1,
-                    dungeon,
-                    false,
-                    palCurrentHp,
-                    sessionId,
-                );
+        const collector = interaction.message.createMessageComponentCollector({
+            filter: (i) => i.user.id === interaction.user.id && sessionManager.isValid(i.user.id, sessionId),
+            time: 5 * 60000,
+            componentType: ComponentType.Button,
+        });
+
+        collector.on("collect", async (action) => {
+            if (!sessionManager.isValid(interaction.user.id, sessionId)) {
+                collector.stop("invalid");
+                return;
             }
 
+            collector.resetTimer(); // Reset timeout since they pressed a button
+
             if (action.customId === `run_${sessionId}`) {
+                collector.stop("ran");
                 await interaction.message.edit({
                     embeds: [
                         createWarningEmbed(
@@ -687,7 +669,7 @@ async function runDungeon(interaction, pal, dungeon, client, sessionId) {
                     await pal.save();
                 }
                 
-                return finalizeDungeon(
+                finalizeDungeon(
                     action,
                     pal,
                     sessionRewards,
@@ -698,9 +680,11 @@ async function runDungeon(interaction, pal, dungeon, client, sessionId) {
                     palCurrentHp,
                     sessionId,
                 );
+                return;
             }
 
             if (action.customId === `fight_${sessionId}`) {
+                await action.deferUpdate();
                 // Use the new combat engine
                 const combatEngine = new CombatEngine();
                 const equipmentEffects = EquipmentManager.getEffects(enhancedPal.equipment);
@@ -708,12 +692,12 @@ async function runDungeon(interaction, pal, dungeon, client, sessionId) {
                 
                 const battleResult = await combatEngine.simulateDungeonBattle(
                     enhancedPal,
-                    enemy,
-                    potionEffects, // Use extracted abilities
+                    currentEnemyCtx.enemy,
+                    potionEffects,
                     equipmentEffects,
                     palCurrentHp,
                     palType,
-                    enemyType,
+                    currentEnemyCtx.enemyType,
                     skillTree,
                     'dungeon',
                     {}
@@ -725,10 +709,11 @@ async function runDungeon(interaction, pal, dungeon, client, sessionId) {
                     `Battle Log - Floor ${currentFloor}`,
                     battleResult.log,
                 );
-                await action.update({ embeds: [battleEmbed], components: [] });
+                await interaction.message.edit({ embeds: [battleEmbed], components: [] });
                 await new Promise((resolve) => setTimeout(resolve, 5000));
 
                 if (!battleResult.playerWon) {
+                    collector.stop("defeated");
                     await interaction.message.edit({
                         embeds: [
                             createErrorEmbed(
@@ -737,7 +722,7 @@ async function runDungeon(interaction, pal, dungeon, client, sessionId) {
                             ),
                         ],
                     });
-                    return finalizeDungeon(
+                    finalizeDungeon(
                         action,
                         pal,
                         sessionRewards,
@@ -748,6 +733,7 @@ async function runDungeon(interaction, pal, dungeon, client, sessionId) {
                         0,
                         sessionId,
                     );
+                    return;
                 }
 
                 // Generate and add floor rewards
@@ -763,30 +749,66 @@ async function runDungeon(interaction, pal, dungeon, client, sessionId) {
                 await new Promise((resolve) => setTimeout(resolve, 4000));
 
                 currentFloor++;
-            }
-        }
 
-        // Dungeon completed
-        await interaction.message.edit({
-            embeds: [
-                createSuccessEmbed(
-                    "Dungeon Cleared!",
-                    `You have conquered all ${dungeon.floors} floors of the **${dungeon.name}**!`,
-                ),
-            ],
+                if (currentFloor <= dungeon.floors) {
+                    currentEnemyCtx = await renderFloor();
+                } else {
+                    collector.stop("cleared");
+                    // Dungeon completed
+                    await interaction.message.edit({
+                        embeds: [
+                            createSuccessEmbed(
+                                "Dungeon Cleared!",
+                                `You have conquered all ${dungeon.floors} floors of the **${dungeon.name}**!`,
+                            ),
+                        ],
+                    });
+                    
+                    finalizeDungeon(
+                        action,
+                        pal,
+                        sessionRewards,
+                        client,
+                        dungeon.floors,
+                        dungeon,
+                        false,
+                        palCurrentHp,
+                        sessionId,
+                    );
+                }
+            }
         });
-        
-        return finalizeDungeon(
-            interaction,
-            pal,
-            sessionRewards,
-            client,
-            dungeon.floors,
-            dungeon,
-            false,
-            palCurrentHp,
-            sessionId,
-        );
+
+        collector.on("end", async (_, reason) => {
+            if (reason === "time") {
+                sessionManager.cleanup(interaction.user.id);
+                try {
+                    await interaction.message.edit({
+                        embeds: [
+                            createWarningEmbed(
+                                "Dungeon Timeout",
+                                "The dungeon exploration timed out. You escaped with the rewards you've gathered so far.",
+                            ),
+                        ],
+                        components: [],
+                    });
+                    finalizeDungeon(
+                        interaction,
+                        pal,
+                        sessionRewards,
+                        client,
+                        currentFloor - 1,
+                        dungeon,
+                        false,
+                        palCurrentHp,
+                        sessionId,
+                    );
+                } catch (e) {
+                     // Message deleted or user blocked
+                }
+            }
+        });
+
     } catch (error) {
         console.error("Dungeon run error:", error);
         sessionManager.cleanup(interaction.user.id);

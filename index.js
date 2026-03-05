@@ -11,8 +11,6 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.DirectMessages,
         GatewayIntentBits.GuildModeration,
@@ -61,9 +59,19 @@ setInterval(() => CooldownManager.cleanup(), 5 * 60 * 1000);
 require('./config/database');
 
 // some functions
+client.prefixes = new Map();
+
 client.getPrefix = async (guildId) => {
-  const data = await Config.findOne({ guildId });
-  return data?.prefix || ","; 
+    if (client.prefixes.has(guildId)) {
+        return client.prefixes.get(guildId);
+    }
+    
+    // Fallback block - get from DB and put in memory
+    const data = await Config.findOne({ guildId });
+    const prefix = (data && data.prefix) ? data.prefix : ','; 
+    
+    client.prefixes.set(guildId, prefix);
+    return prefix;
 };
 
 client.login(process.env.BOT_TOKEN).catch(console.error);

@@ -2,6 +2,7 @@
 const Blacklist = require('../../models/Blacklist');
 const config = require('../../config/config.json');
 const { createArgEmbed } = require('../../utils/embed');
+const { updateBlacklistCache } = require('../../utils/permissions');
 
 module.exports = {
     name: 'blacklist',
@@ -96,6 +97,8 @@ async function handleBlacklistAdd(message, args, user) {
             blacklistedBy: message.author.id
         });
 
+        updateBlacklistCache(user.id, null, reason, true);
+
         const embed = new EmbedBuilder()
             .setColor(config.colors.success)
             .setTitle(`${config.emojis.banned} User Blacklisted`)
@@ -136,6 +139,9 @@ async function handleBlacklistRemove(message, args, user) {
             
             return await message.reply({ embeds: [embed] });
         }
+
+        updateBlacklistCache(user.id, null, null, false);
+
         const embed = new EmbedBuilder()
             .setColor(config.colors.success)
             .setTitle(`${config.emojis.unbanned} User Unblacklisted`)

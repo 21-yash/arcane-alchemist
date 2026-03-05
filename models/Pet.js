@@ -43,4 +43,8 @@ const PetSchema = new mongoose.Schema({
     
 });
 
+// Indexes for common queries to prevent COLLSCAN
+PetSchema.index({ ownerId: 1, status: 1 });
+PetSchema.index({ ownerId: 1, shortId: 1 }, { unique: true });
+
 module.exports = mongoose.model('Pet', PetSchema);

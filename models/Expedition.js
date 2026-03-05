@@ -35,4 +35,6 @@ const ExpeditionSchema = new mongoose.Schema({
     }
 });
 
+ExpeditionSchema.index({ userId: 1, status: 1 });
+
 module.exports = mongoose.model('Expedition', ExpeditionSchema);
