@@ -321,6 +321,17 @@ module.exports = {
                 return message.reply({ embeds: [playerResult.embed] });
             }
             const player = playerResult.player;
+
+            const breedingPen = CommandHelpers.hasItem(player, 'breeding_pen');
+            if (!breedingPen) {
+                return message.reply({
+                    embeds: [createErrorEmbed(
+                        'No Breeding Pen',
+                        `You need to craft a **Breeding Pen** first! \nUse \`${prefix}research\` to discover it's recipe, then use \`${prefix}craft\` to craft it.`
+                    )] 
+                });
+            }
+
             const { effects: labEffects } = await LabManager.getLabData(message.author.id);
 
             // ── Direct CLI subcommands (kept for quick use) ──

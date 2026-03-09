@@ -337,22 +337,31 @@ module.exports = {
 
             // Process base loot
             const foundLoot = [];
-            let lootMultiplier = (selectedEvent.lootMultiplier || 1.0) * petBonus.typeBonus;
-            
-            for (const lootItem of biome.lootTable) {
-                let chance = lootItem.chance * lootMultiplier;
-                chance *= 1 + (labEffects?.rareItemChanceBonus || 0);
-                
-                // Guaranteed rare item from certain events
-                if (selectedEvent.guaranteedRare && lootItem.chance <= 0.1) {
-                    chance = 0.25;
+
+            // Tutorial override: first forage gives guaranteed loot for brewing step
+            if (player.tutorialStep === 2) {
+                const { TUTORIAL_FORAGE_LOOT } = require('../../gamedata/tutorial');
+                for (const item of TUTORIAL_FORAGE_LOOT) {
+                    foundLoot.push({ itemId: item.itemId, quantity: item.quantity });
                 }
+            } else {
+                let lootMultiplier = (selectedEvent.lootMultiplier || 1.0) * petBonus.typeBonus;
                 
-                if (Math.random() < chance) {
-                    const baseQuantity = Math.floor(Math.random() * (lootItem.quantityRange[1] - lootItem.quantityRange[0] + 1)) + lootItem.quantityRange[0];
-                    const quantityMultiplier = lootMultiplier;
-                    const quantity = Math.max(1, Math.floor(baseQuantity * quantityMultiplier));
-                    foundLoot.push({ itemId: lootItem.itemId, quantity });
+                for (const lootItem of biome.lootTable) {
+                    let chance = lootItem.chance * lootMultiplier;
+                    chance *= 1 + (labEffects?.rareItemChanceBonus || 0);
+                    
+                    // Guaranteed rare item from certain events
+                    if (selectedEvent.guaranteedRare && lootItem.chance <= 0.1) {
+                        chance = 0.25;
+                    }
+                    
+                    if (Math.random() < chance) {
+                        const baseQuantity = Math.floor(Math.random() * (lootItem.quantityRange[1] - lootItem.quantityRange[0] + 1)) + lootItem.quantityRange[0];
+                        const quantityMultiplier = lootMultiplier;
+                        const quantity = Math.max(1, Math.floor(baseQuantity * quantityMultiplier));
+                        foundLoot.push({ itemId: lootItem.itemId, quantity });
+                    }
                 }
             }
 
@@ -448,9 +457,13 @@ module.exports = {
 
             await message.reply({ embeds: [successEmbed] });
             
-            // Grant XP
+            // Grant XP — re-fetch player since bulkWrite made our in-memory copy stale
             const baseXp = biome.staminaCost + (selectedEvent.xpBonus || 0);
-            grantPlayerXp(client, message, message.author.id, baseXp, { labEffects });
+            const freshPlayer = await Player.findOne({ userId: message.author.id });
+            if (freshPlayer) {
+                await grantPlayerXp(client, message, freshPlayer, baseXp, { labEffects });
+                await freshPlayer.save();
+            }
             
             // Update quest progress
             await updateQuestProgress(message.author.id, 'forage_times', 1, message);
@@ -545,7 +558,11 @@ module.exports = {
                             embeds: [createSuccessEmbed('Tamed!', `<@${message.author.id}> You successfully tamed the **${encounteredPalInfo.name}**! It has been added to your collection.`)],
                             components: []
                         });
-                        grantPlayerXp(client, message, message.author.id, 20, { labEffects });
+                        const xpPlayer = await Player.findOne({ userId: message.author.id });
+                        if (xpPlayer) {
+                            await grantPlayerXp(client, message, xpPlayer, 20, { labEffects });
+                            await xpPlayer.save();
+                        }
                         return collector.stop();
                     }
                 });

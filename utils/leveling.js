@@ -20,55 +20,62 @@ function calculateXpForNextLevel(level) {
 
 /**
  * Handles XP gain and potential level-ups for a Player (Alchemist).
+ * DOES NOT fetch or save the player — caller is responsible for both.
+ * 
  * @param {import('discord.js').Client} client The Discord client.
  * @param {import('discord.js').Message} message The message that triggered the action.
- * @param {string} userId The ID of the user gaining XP.
+ * @param {object} playerDoc The Mongoose Player document to mutate.
  * @param {number} xpGained The amount of XP to grant.
+ * @param {object} [options]
+ * @param {object} [options.labEffects] Pre-fetched lab effects to skip internal lab fetch.
+ * @returns {{ leveledUp: boolean, newLevel: number }}
  */
-async function grantPlayerXp(client, message, userId, xpGained, options = {}) {
-    const player = await Player.findOne({ userId });
-    if (!player) return;
+async function grantPlayerXp(client, message, playerDoc, xpGained, options = {}) {
+    if (!playerDoc) return { leveledUp: false, newLevel: 0 };
 
     let labEffects = options.labEffects;
     if (!labEffects) {
-        const { effects } = await LabManager.getLabData(userId);
+        const { effects } = await LabManager.getLabData(playerDoc.userId);
         labEffects = effects;
     }
 
     const finalXp = LabManager.applyPlayerXpBonus(xpGained, labEffects);
+    playerDoc.xp += finalXp;
 
-    player.xp += finalXp;
-
-    let xpNeeded = calculateXpForNextLevel(player.level);
+    let xpNeeded = calculateXpForNextLevel(playerDoc.level);
     let leveledUp = false;
 
-    while (player.xp >= xpNeeded) {
-        player.level++;
-        player.xp -= xpNeeded;
+    while (playerDoc.xp >= xpNeeded) {
+        playerDoc.level++;
+        playerDoc.xp -= xpNeeded;
         leveledUp = true;
-        xpNeeded = calculateXpForNextLevel(player.level);
+        xpNeeded = calculateXpForNextLevel(playerDoc.level);
 
-        player.maxStamina += 10;
-        player.stamina = player.maxStamina;
+        playerDoc.maxStamina += 10;
+        playerDoc.stamina = playerDoc.maxStamina;
 
-        // Announce the level up
         const levelUpEmbed = createInfoEmbed(
             '🎉 Alchemist Level Up!',
-            `Congratulations, you are now **Level ${player.level}**!`
-        ).setThumbnail(message.author.displayAvatarURL());
+            `Congratulations, you are now **Level ${playerDoc.level}**!`
+        ).setThumbnail(message.author?.displayAvatarURL?.() || message.user?.displayAvatarURL?.());
         await message.channel.send({ embeds: [levelUpEmbed] });
     }
 
-    await player.save();
-    return leveledUp;
+    return { leveledUp, newLevel: playerDoc.level };
 }
 
 /**
  * Handles XP gain and potential level-ups for a Pal.
+ * DOES NOT save palDocument — caller is responsible for saving.
+ * SkillTree is saved internally (separate collection, no race condition with Pal/Player).
+ * 
  * @param {import('discord.js').Client} client The Discord client.
  * @param {import('discord.js').Message} message The message that triggered the action.
- * @param {object} palDocument The Mongoose document for the Pal gaining XP.
+ * @param {object} palDocument The Mongoose Pet document to mutate.
  * @param {number} xpGained The amount of XP to grant.
+ * @param {object} [options]
+ * @param {object} [options.labEffects] Pre-fetched lab effects.
+ * @returns {{ leveledUp: boolean, newLevel: number, evolved: boolean, evolutionInfo: object|null }}
  */
 async function grantPalXp(client, message, palDocument, xpGained, options = {}) {
     let labEffects = options.labEffects;
@@ -78,11 +85,13 @@ async function grantPalXp(client, message, palDocument, xpGained, options = {}) 
     }
 
     const finalXp = LabManager.applyPalXpBonus(xpGained, labEffects);
-
     palDocument.xp += finalXp;
 
     let xpNeeded = calculateXpForNextLevel(palDocument.level);
     let leveledUp = false;
+    let skillPointsGained = 0;
+    let evolved = false;
+    let evolutionInfo = null;
 
     while (palDocument.xp >= xpNeeded && palDocument.level < 100) {
         palDocument.level++;
@@ -99,68 +108,68 @@ async function grantPalXp(client, message, palDocument, xpGained, options = {}) 
             palDocument.stats.luck += basePal.statGrowth.luck;
         }
 
+        // Accumulate skill points — saved in batch after the loop
         if (palDocument.level % 5 === 0) {
-            let skillTree = await SkillTree.findOne({ palId: palDocument.petId });
-            if (!skillTree) {
-                skillTree = new SkillTree({
-                    palId: palDocument.petId,
-                    skillPoints: 0,
-                    unlockedSkills: []
-                });
-            }
-
-            skillTree.skillPoints += 1;
-            await skillTree.save();
-
-            const skillPointEmbed = createInfoEmbed(
-                `🌟 Skill Point Gained!`,
-                `**${palDocument.nickname}** gained a skill point! Use the skills command to spend it.`
-            );
-            await message.channel.send({ embeds: [skillPointEmbed] });
+            skillPointsGained++;
         }
 
         xpNeeded = calculateXpForNextLevel(palDocument.level);
-
-        // Announce the level up
-        const levelUpEmbed = createInfoEmbed(
-            `🐾 Your ${palDocument.nickname} Leveled Up!`,
-            `It is now **Level ${palDocument.level}**!`
-        );
-        await message.channel.send({ embeds: [levelUpEmbed] });
 
         // Check for evolution
         if (basePal.evolution && palDocument.level >= basePal.evolution.level) {
             const evolutionData = allPals[basePal.evolution.evolvesTo];
             const oldName = palDocument.nickname;
-            let skillTree = await SkillTree.findOne({ palId: palDocument.petId });
-            if (!skillTree) {
-                skillTree = new SkillTree({
-                    palId: palDocument.petId,
-                    skillPoints: 0,
-                    unlockedSkills: []
-                });
-            }
 
-            skillTree.skillPoints = 0;
-            skillTree.unlockedSkills = [];
-            await skillTree.save();
+            // Evolution resets skill tree — atomic $set
+            await SkillTree.findOneAndUpdate(
+                { palId: palDocument.petId },
+                { $set: { skillPoints: 0, unlockedSkills: [] } },
+                { upsert: true }
+            );
             
             palDocument.basePetId = basePal.evolution.evolvesTo;
-            palDocument.nickname = evolutionData.name; // Update nickname to new species name
+            palDocument.nickname = evolutionData.name;
             palDocument.stats = evolutionData.baseStats;
             palDocument.level = 1;
             palDocument.xp = 0;
+            skillPointsGained = 0; // Wipe — evolution resets everything
+            evolved = true;
+            evolutionInfo = { oldName, newName: evolutionData.name };
             
             const evolutionEmbed = createInfoEmbed(
                 `✨ What's this? Your ${oldName} is evolving! ✨`,
                 `Congratulations! Your Pal evolved into a **${evolutionData.name}**!`
             );
             await message.channel.send({ embeds: [evolutionEmbed] });
+            break; // Stop leveling — stats were reset
         }
     }
 
-    await palDocument.save();
-    return leveledUp;
+    // Batch SkillTree update — single atomic $inc, no read needed
+    if (skillPointsGained > 0) {
+        await SkillTree.findOneAndUpdate(
+            { palId: palDocument.petId },
+            { $inc: { skillPoints: skillPointsGained } },
+            { upsert: true, setDefaultsOnInsert: true }
+        );
+
+        const skillPointEmbed = createInfoEmbed(
+            `🌟 Skill Point${skillPointsGained > 1 ? 's' : ''} Gained!`,
+            `**${palDocument.nickname}** gained **${skillPointsGained}** skill point${skillPointsGained > 1 ? 's' : ''}! Use the skills command to spend ${skillPointsGained > 1 ? 'them' : 'it'}.`
+        );
+        await message.channel.send({ embeds: [skillPointEmbed] });
+    }
+
+    // Single consolidated level-up announcement
+    if (leveledUp && !evolved) {
+        const levelUpEmbed = createInfoEmbed(
+            `🐾 Your ${palDocument.nickname} Leveled Up!`,
+            `It is now **Level ${palDocument.level}**!`
+        );
+        await message.channel.send({ embeds: [levelUpEmbed] });
+    }
+
+    return { leveledUp, newLevel: palDocument.level, evolved, evolutionInfo };
 }
 
 /**
@@ -210,19 +219,12 @@ async function grantPalLevels(client, message, palDocument, levelsToGrant) {
             const evolutionData = allPals[basePal.evolution.evolvesTo];
             const oldName = palDocument.nickname;
             
-            // Handle skill tree reset for evolution
-            let skillTree = await SkillTree.findOne({ palId: palDocument.petId });
-            if (!skillTree) {
-                skillTree = new SkillTree({
-                    palId: palDocument.petId,
-                    skillPoints: 0,
-                    unlockedSkills: []
-                });
-            }
-
-            skillTree.skillPoints = 0;
-            skillTree.unlockedSkills = [];
-            await skillTree.save();
+            // Handle skill tree reset for evolution — atomic $set
+            await SkillTree.findOneAndUpdate(
+                { palId: palDocument.petId },
+                { $set: { skillPoints: 0, unlockedSkills: [] } },
+                { upsert: true }
+            );
             
             // Apply evolution
             palDocument.basePetId = basePal.evolution.evolvesTo;
@@ -240,21 +242,14 @@ async function grantPalLevels(client, message, palDocument, levelsToGrant) {
         }
     }
 
-    // Add skill points in bulk
+    // Add skill points in bulk — atomic $inc
     if (skillPointsGained > 0) {
-        let skillTree = await SkillTree.findOne({ palId: palDocument.petId });
-        if (!skillTree) {
-            skillTree = new SkillTree({
-                palId: palDocument.petId,
-                skillPoints: 0,
-                unlockedSkills: []
-            });
-        }
-        skillTree.skillPoints += skillPointsGained;
-        await skillTree.save();
+        await SkillTree.findOneAndUpdate(
+            { palId: palDocument.petId },
+            { $inc: { skillPoints: skillPointsGained } },
+            { upsert: true, setDefaultsOnInsert: true }
+        );
     }
-
-    await palDocument.save();
     
     return { 
         totalLevelsGained, 

@@ -23,9 +23,9 @@ module.exports = {
         const args = message.content.slice(prefix.length).trim().split(/ +/);
         const commandName = args.shift().toLowerCase();
 
-        // Get command
+        // Get command (O(1) lookup including aliases)
         const command = client.textCommands.get(commandName) || 
-                       client.textCommands.find(cmd => cmd.aliases && cmd.aliases.includes(commandName));
+                       client.textCommands.get(client.aliases.get(commandName));
 
         if (!command) return;
 

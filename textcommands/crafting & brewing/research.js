@@ -388,6 +388,33 @@ module.exports = {
                 return message.reply({ embeds: [playerResult.embed] });
             }
             const player = playerResult.player;
+
+            // ── Tutorial shortcut: instant recipe discovery ──
+            if (player.tutorialStep === 4) {
+                const { TUTORIAL_RECIPE_ID } = require('../../gamedata/tutorial');
+                const recipeData = GameData.recipes[TUTORIAL_RECIPE_ID];
+                if (recipeData) {
+                    // Grant recipe
+                    if (!player.grimoire) player.grimoire = [];
+                    if (!player.grimoire.includes(TUTORIAL_RECIPE_ID)) {
+                        player.grimoire.push(TUTORIAL_RECIPE_ID);
+                    }
+                    const xp = recipeData.xp || 10;
+                    const { grantPlayerXp } = require('../../utils/leveling');
+                    await grantPlayerXp(client, message, player, xp);
+                    await player.save();
+
+                    // Build reveal
+                    const resultItem = GameData.getItem(recipeData.result.itemId);
+                    const recipe = { data: recipeData, item: resultItem };
+                    const revealContainer = buildRevealContainer(recipe, xp);
+                    return message.reply({
+                        components: [revealContainer],
+                        flags: MessageFlags.IsComponentsV2
+                    });
+                }
+            }
+
             const { lab, effects } = await LabManager.getLabData(message.author.id);
             await LabManager.syncLabSystems(player, lab, effects);
 

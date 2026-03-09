@@ -85,6 +85,7 @@ module.exports = {
 };
 
 async function handleBiomeSelection(message, player, client, prefix) {
+    const allBiomes = GameData.biomes;
     const biomeOptions = Object.entries(allBiomes)
         .filter(([, biome]) => player.level >= biome.levelRequirement)
         .map(([biomeId, biome]) => ({
@@ -225,6 +226,7 @@ async function handleDungeonSelection(message, player, client, prefix) {
                 embeds: [createSuccessEmbed("Dungeon Selected", `Your preferred dungeon is now **${dungeonName}**.`)],
                 components: [],
             });
+            client.emit("dungeonSelected", interaction.user.id);
         }
     });
 

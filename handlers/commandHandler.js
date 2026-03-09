@@ -44,6 +44,14 @@ module.exports = (client) => {
                     const command = require(path.resolve(filePath));
                     if (command.name && command.execute) {
                         client.textCommands.set(command.name, command);
+                        
+                        // Populate aliases to avoid linear scan
+                        if (command.aliases && Array.isArray(command.aliases)) {
+                            command.aliases.forEach(alias => {
+                                client.aliases.set(alias, command.name);
+                            });
+                        }
+                        
                       //  console.log(`✅ Loaded text command: ${command.name}`);
                     } else {
                         console.warn(`⚠️ Invalid text command structure: ${filePath}`);

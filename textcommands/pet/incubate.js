@@ -276,6 +276,18 @@ module.exports = {
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
             if (!playerResult.success) return message.reply({ embeds: [playerResult.embed] });
             const player = playerResult.player;
+
+            // Check if player owns an Alchemical Incubator
+            const hasIncubator = CommandHelpers.hasItem(player, 'alchemical_incubator');
+            if (!hasIncubator) {
+                return message.reply({
+                    embeds: [createErrorEmbed(
+                        'No Incubator',
+                        `You need to craft an **Alchemical Incubator** first!\nUse \`${prefix}research\` to discover it's recipe, then use \`${prefix}craft\` to craft it.`
+                    )]
+                });
+            }
+
             const { effects: labEffects } = await LabManager.getLabData(message.author.id);
 
             const sub = (args[0] || '').toLowerCase();

@@ -844,12 +844,16 @@ async function finalizeDungeon(
             console.error('Failed to update player rewards after multiple retries');
         }
 
-        // Grant Pal XP and check for level up
+        // Grant Pal XP and check for level up (no longer saves pal — we do it below)
         const levelUpInfo = await grantPalXp(client, interaction.message, pal, rewards.xp);
 
         // Grant Player XP based on dungeon difficulty × floors cleared
         const playerXp = dungeon.staminaCost * floorsCleared;
-        await grantPlayerXp(client, interaction.message, interaction.user.id, playerXp);
+        const xpPlayer = await Player.findOne({ userId: interaction.user.id });
+        if (xpPlayer) {
+            await grantPlayerXp(client, interaction.message, xpPlayer, playerXp);
+            await xpPlayer.save();
+        }
 
         // Update pal status based on final HP
         if (wasDefeated) {
@@ -881,6 +885,9 @@ async function finalizeDungeon(
             client.emit("dungeonClear", interaction.user.id);
             await updateQuestProgress(interaction.user.id, 'clear_dungeons', 1, interaction);
         }
+
+        // Always emit attempt event to progress the tutorial
+        client.emit("dungeonAttempt", interaction.user.id);
     } catch (error) {
         console.error("Error in finalizeDungeon:", error);
         sessionManager.cleanup(interaction.user.id);

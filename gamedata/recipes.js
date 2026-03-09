@@ -297,7 +297,8 @@ module.exports = {
             { itemId: 'iron_ore', quantity: 5 },
         ],
         xp: 80,
-        level: 10
+        level: 10,
+        exchangeable: true
     },
     'recipe_storm_core': {
         result: { itemId: 'storm_core', quantity: 1 },
@@ -308,7 +309,8 @@ module.exports = {
             { itemId: 'storm_essence', quantity: 8 },
         ],
         xp: 200,
-        level: 12
+        level: 12,
+        exchangeable: true
     },
     'recipe_volcanic_core': {
         result: { itemId: 'volcanic_core', quantity: 1 },
@@ -319,7 +321,8 @@ module.exports = {
             { itemId: 'obsidian_fragment', quantity: 8 },
         ],
         xp: 220,
-        level: 15
+        level: 15,
+        exchangeable: true
     },
     'recipe_nightmare_orb': {
         result: { itemId: 'nightmare_orb', quantity: 1 },
@@ -330,7 +333,8 @@ module.exports = {
             { itemId: 'echo_core', quantity: 3 },
         ],
         xp: 300,
-        level: 16
+        level: 16,
+        exchangeable: true
     },
 
 

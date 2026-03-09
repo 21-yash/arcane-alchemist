@@ -418,7 +418,11 @@ module.exports = {
 
         // Grant player XP from expeditions
         if (totalRewards.xp > 0) {
-            await grantPlayerXp(client, message, message.author.id, totalRewards.xp);
+            const xpPlayer = await Player.findOne({ userId: message.author.id });
+            if (xpPlayer) {
+                await grantPlayerXp(client, message, xpPlayer, totalRewards.xp);
+                await xpPlayer.save();
+            }
         }
 
         // Show results

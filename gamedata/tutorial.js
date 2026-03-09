@@ -1,165 +1,211 @@
 /**
- * Tutorial step definitions for the Arcane Alchemist onboarding.
+ * Interactive Tutorial — Step Definitions
  * 
- * Each step follows a narrative structure:
- *   - A mentor character ("Eldric, the Grand Alchemist") guides the player
- *   - Each step teaches a core mechanic
- *   - Players can progress with "Next" or skip the entire tutorial
+ * Each step is a guided task that requires the player to use an actual command.
+ * The tutorial intercepts command execution and provides narrative context.
  * 
  * tutorialStep values:
- *   0  = Not started (just created account)
- *   1  = Welcome / Profile overview
- *   2  = Foraging basics
- *   3  = Inventory & Items
- *   4  = Brewing & Crafting
- *   5  = Pals & Companions
- *   6  = Dungeons & Combat
- *   7  = Advanced tips & Wrapping up
- *  -1  = Completed or Skipped
+ *   0    = Not started (just created account)
+ *   1-10 = Active step number
+ *  -1    = Completed or Skipped
  */
 
 const MENTOR_NAME = 'Eldric, the Grand Alchemist';
 const MENTOR_ICON = '🧙‍♂️';
-const TUTORIAL_COLOR = '#9B59B6'; // Rich purple — mystic/alchemist vibe
+const TUTORIAL_COLOR = 0x9B59B6;
 
+// Guaranteed loot for the first tutorial forage
+const TUTORIAL_FORAGE_LOOT = [
+    { itemId: 'moonpetal_herb', quantity: 2 },
+    { itemId: 'crystal_shard', quantity: 1 },
+];
+
+// The recipe granted during tutorial research
+const TUTORIAL_RECIPE_ID = 'recipe_minor_healing';
+
+const COMPLETION_REWARDS = {
+    gold: 150,
+    stamina: 50,
+    xp: 150
+};
+
+/**
+ * Tutorial steps definition
+ * 
+ * expectedCommands: array of command names that trigger step completion (via messageCreate)
+ * waitForEvent: if set, listen for this client event instead of messageCreate
+ * text: V2 markdown content shown to the player
+ * hint: short hint shown as a footer
+ */
 const steps = {
     1: {
-        title: `${MENTOR_ICON} Welcome, Young Alchemist!`,
-        description:
-            `*A weathered figure in flowing robes approaches you, eyes gleaming with ancient wisdom...*\n\n` +
-            `"Ah, a new apprentice! I am **${MENTOR_NAME}**, and I will guide you through the foundations of alchemy.\n\n` +
-            `Let's begin with the basics. Every alchemist has a **Profile** — it shows your level, gold, stamina, and achievements."\n\n` +
-            `📋 **Try it:** Use the \`{prefix}profile\` command to view your stats!\n\n` +
-            `> **Gold** 💰 — Your currency for buying items from the shop.\n` +
-            `> **Stamina** ⚡ — Spent when foraging. It regenerates over time.\n` +
-            `> **Level** 📊 — Increases from gaining XP through activities.`,
-        fields: [
-            { name: '💡 Tip', value: 'Your stamina regenerates automatically! Higher levels unlock new biomes and dungeons.', inline: false }
-        ],
-        footer: 'Step 1 of 7 • Profile & Stats'
+        id: 'welcome',
+        text: (prefix) =>
+            `# ${MENTOR_ICON} Welcome, Apprentice!\n` +
+            `-# Eldric, the Grand Alchemist approaches you...\n\n` +
+            `*"Ah, a new apprentice! I'll guide you through the basics — but we learn by **doing**, not reading!"*\n\n` +
+            `### 📋 Task: Select Your Companion\n` +
+            `> Your Pal fights alongside you, helps you forage, and grows stronger with you.\n` +
+            `> Use \`${prefix}select pet 1\` to set your starter as your active Pal.\n\n` +
+            `-# 💡 Your starter Pal was already assigned when you used ${prefix}start`,
+        expectedCommands: ['select'],
+        hint: `Use select pet <id> to pick your active companion`,
     },
 
     2: {
-        title: `${MENTOR_ICON} The Art of Foraging`,
-        description:
-            `"Excellent! Now, every great potion begins with raw ingredients. The world is rich with magical flora — you just need to know where to look.\n\n` +
-            `**Foraging** is your primary way to gather ingredients. Different **biomes** contain different materials."\n\n` +
-            `📋 **Try it:** Use \`{prefix}forage\` to gather ingredients from the Whispering Forest!\n\n` +
-            `> 🌲 **Biomes** — Each has unique loot tables and Pal encounters.\n` +
-            `> 🐾 **Wild Pals** — You might stumble upon a wild creature while foraging!\n` +
-            `> ⚡ **Stamina** — Each forage trip costs stamina, so plan wisely.`,
-        fields: [
-            { name: '🗺️ Starter Biome', value: 'The **Whispering Forest** is available at Level 1. New biomes unlock as you level up!', inline: false },
-            { name: '💡 Tip', value: 'Bring a Pal with you using `{prefix}select pet <id>` for bonus luck and better loot!', inline: false }
-        ],
-        footer: 'Step 2 of 7 • Foraging'
+        id: 'forage',
+        text: (prefix) =>
+            `# 🌿 Gathering Ingredients\n` +
+            `-# Step 2 of 10\n\n` +
+            `*"Every great potion begins with raw ingredients. The Whispering Forest is a great place to start."*\n\n` +
+            `### 📋 Task: Forage for Ingredients\n` +
+            `> Use \`${prefix}forage\` to gather ingredients from the wild.\n` +
+            `> Each forage costs **Stamina** ⚡ — it regenerates over time.\n\n` +
+            `-# 💡 Different biomes drop different materials. More unlock as you level up!`,
+        expectedCommands: ['forage', 'gather'],
+        hint: `Type forage to gather your first ingredients`,
     },
 
     3: {
-        title: `${MENTOR_ICON} Your Alchemist's Satchel`,
-        description:
-            `"After foraging, your gathered materials are stored in your **Inventory**. Think of it as your alchemist's satchel — every herb, crystal, and hide has a purpose."\n\n` +
-            `📋 **Try it:** Use \`{prefix}inventory\` to see what you've collected!\n\n` +
-            `> 🌿 **Ingredients** — Used for brewing potions.\n` +
-            `> ⚒️ **Materials** — Used for crafting equipment.\n` +
-            `> 🧪 **Potions** — Consumable items that give buffs.\n` +
-            `> 🗡️ **Equipment** — Gear up your Pals for combat!`,
-        fields: [
-            { name: '🔍 Item Info', value: 'Use `{prefix}iteminfo <item name>` to learn about any specific item — its rarity, uses, and where to find it.', inline: false },
-            { name: '💡 Tip', value: 'Keep your inventory diverse! You\'ll need various materials for both brewing and crafting.', inline: false }
-        ],
-        footer: 'Step 3 of 7 • Inventory & Items'
+        id: 'inventory',
+        text: (prefix) =>
+            `# 🎒 Your Alchemist's Satchel\n` +
+            `-# Step 3 of 10\n\n` +
+            `*"Excellent gathering! Now let's see what you've collected."*\n\n` +
+            `### 📋 Task: Check Your Inventory\n` +
+            `> Use \`${prefix}inventory\` to see all your gathered materials.\n` +
+            `> You'll see **ingredients** 🌿, **materials** ⚒️, **potions** 🧪, and **equipment** 🗡️\n\n` +
+            `-# 💡 Use ${prefix}iteminfo <name> to learn about any item`,
+        expectedCommands: ['inventory', 'inv'],
+        hint: `Type inventory to check your satchel`,
     },
 
     4: {
-        title: `${MENTOR_ICON} Brewing & Crafting`,
-        description:
-            `"Now we arrive at the heart of alchemy — **Brewing** and **Crafting**. These are what set us apart from mere adventurers!"\n\n` +
-            `🧪 **Brewing** — Combine ingredients to create powerful potions.\n` +
-            `> Use \`{prefix}brew\` to see available recipes and start brewing.\n` +
-            `> Your **Grimoire** (\`{prefix}grimoire\`) holds all your discovered potion recipes.\n\n` +
-            `⚒️ **Crafting** — Forge equipment and tools from gathered materials.\n` +
-            `> Use \`{prefix}craft\` to see what you can create.\n` +
-            `> Your **Craft Book** (\`{prefix}craftbook\`) tracks known crafting recipes.\n\n` +
-            `*"Brewing has a chance to fail, but crafting always succeeds. Choose wisely!"*`,
-        fields: [
-            { name: '🏪 The Shop', value: 'Need materials? Visit the `{prefix}shop` to buy items with gold!', inline: false },
-            { name: '💡 Tip', value: 'Craft an **Alchemical Incubator** early — you\'ll need it to hatch eggs into new Pals!', inline: false }
-        ],
-        footer: 'Step 4 of 7 • Brewing & Crafting'
+        id: 'research',
+        text: (prefix) =>
+            `# 🔬 Discovering Recipes\n` +
+            `-# Step 4 of 10\n\n` +
+            `*"Before you can brew, you must know the recipe! Let me teach you how to research new recipes."*\n\n` +
+            `### 📋 Task: Research a Recipe\n` +
+            `> Use \`${prefix}research\` to discover your first recipe.\n` +
+            `> Normally, research takes time and resources — but I'll speed this one up for you!\n\n` +
+            `-# 💡 Research is how you unlock new potions and crafting recipes`,
+        expectedCommands: ['research', 'discover'],
+        hint: `Type research to discover your first recipe`,
     },
 
     5: {
-        title: `${MENTOR_ICON} Pals — Your Loyal Companions`,
-        description:
-            `"An alchemist is only as strong as their companions! Your **Pals** are magical creatures that fight alongside you, assist in foraging, and can even be bred."\n\n` +
-            `📋 **Try it:** Use \`{prefix}pet\` to view your current Pals!\n\n` +
-            `> 🐾 **Managing Pals** — Use \`{prefix}pet <id>\` to see a Pal's details.\n` +
-            `> ⚔️ **Equipment** — Equip gear with \`{prefix}equip <pal_id> <item>\` to boost stats.\n` +
-            `> 🎯 **Skills** — Unlock powerful abilities via \`{prefix}skills <pal_id>\`.\n` +
-            `> 🥚 **Breeding** — Combine two Pals with \`{prefix}breed\` to create eggs!\n` +
-            `> 🥚 **Incubation** — Hatch eggs with \`{prefix}incubate\`.`,
-        fields: [
-            { name: '⭐ Pal Types', value: 'Beast 🐺 | Elemental 🔥 | Mystic ✨ | Undead 💀 | Mechanical ⚙️ | Aeonic 🌀 | Abyssal 🌑', inline: false },
-            { name: '💡 Tip', value: 'Select an active Pal with `{prefix}select pet <id>` — they\'ll accompany you on foraging trips and provide bonuses!', inline: false }
-        ],
-        footer: 'Step 5 of 7 • Pals & Companions'
+        id: 'brew',
+        text: (prefix) =>
+            `# ⚗️ Your First Potion\n` +
+            `-# Step 5 of 10\n\n` +
+            `*"Now that you know the recipe for a **Minor Healing Potion**, let's put those ingredients to use!"*\n\n` +
+            `### 📋 Task: Brew a Minor Healing Potion\n` +
+            `> 1. Use \`${prefix}brew\` to open the cauldron\n` +
+            `> 2. Type: \`2 moonpetal_herb, 1 crystal_shard\`\n` +
+            `> 3. Hit the **Brew** button when the recipe matches!\n\n` +
+            `> 📜 **Recipe:** 2x Moonpetal Herb + 1x Crystal Shard → Minor Healing Potion\n\n` +
+            `-# 💡 This step completes when your potion is brewed successfully`,
+        waitForEvent: 'potionBrewed',
+        expectedCommands: [],
+        hint: `Open the cauldron, add ingredients, and click Brew`,
     },
 
     6: {
-        title: `${MENTOR_ICON} Dungeons & Battle`,
-        description:
-            `"The world is not all peaceful meadows, apprentice. Dark **Dungeons** await those brave enough to enter. Send your Pals to conquer them for powerful rewards!"\n\n` +
-            `⚔️ **Dungeons** — Multi-floor combat challenges.\n` +
-            `> Use \`{prefix}dungeon\` to enter a dungeon with your Pals.\n` +
-            `> Each floor has enemies to fight — defeat them all to clear it!\n\n` +
-            `🏟️ **Arena Battles** — Test your Pals against other players.\n` +
-            `> Use \`{prefix}battle @player\` for 1v1 Pal battles.\n` +
-            `> Use \`{prefix}partybattle @player\` for full team battles!\n\n` +
-            `🗺️ **Expeditions** — Send Pals on timed expeditions for passive rewards.\n` +
-            `> Use \`{prefix}expedition\` to send a Pal out.`,
-        fields: [
-            { name: '⚡ Combat Tips', value: '• Type advantages matter!\n• Equip your Pals before dungeon runs.\n• Use combat potions for tough fights.', inline: false },
-            { name: '💡 Tip', value: 'Start with lower-tier dungeons. The rewards scale with difficulty — don\'t rush into danger unprepared!', inline: false }
-        ],
-        footer: 'Step 6 of 7 • Dungeons & Combat'
+        id: 'pet',
+        text: (prefix) =>
+            `# 🐾 Know Your Companion\n` +
+            `-# Step 6 of 10\n\n` +
+            `*"Your Pal is more than a pet — they're your partner in alchemy and combat!"*\n\n` +
+            `### 📋 Task: View Your Pal's Details\n` +
+            `> Use \`${prefix}pet info 1\` to see your Pal's stats, abilities, and equipment.\n` +
+            `> Pals gain **XP** from dungeons and level up just like you!\n\n` +
+            `> ⚔️ **Equip** gear with \`${prefix}equip <pal_id> <item>\`\n` +
+            `> 🎯 **Skills** — unlock abilities with \`${prefix}skills <pal_id>\`\n\n` +
+            `-# 💡 Higher rarity Pals have stronger base stats and unique abilities`,
+        expectedCommands: ['pet'],
+        hint: `Type pet info 1 to see your first Pal's details`,
     },
 
     7: {
-        title: `${MENTOR_ICON} Your Journey Begins!`,
-        description:
-            `"You have learned the foundations, young alchemist. But the path ahead holds much more — **quests**, **achievements**, **the Laboratory**, and secrets yet to be discovered..."\n\n` +
-            `📖 **Useful Commands:**\n` +
-            `> \`{prefix}quest\` — Accept and complete daily/weekly quests for rewards.\n` +
-            `> \`{prefix}lab\` — Upgrade your Laboratory for powerful bonuses.\n` +
-            `> \`{prefix}achievements\` — Track your milestones.\n` +
-            `> \`{prefix}guide\` — In-depth guides on all game mechanics.\n` +
-            `> \`{prefix}help\` — Full list of all commands.\n` +
-            `> \`{prefix}vote\` — Vote for the bot to earn crates & rewards!\n\n` +
-            `*"Remember — the greatest alchemists didn't master everything in a day. Take your time, experiment, and most importantly... enjoy the journey."*\n\n` +
-            `🎉 **Tutorial Complete!** You're ready to explore the world of Arcane Alchemist!`,
-        fields: [
-            { name: '🎁 Tutorial Reward', value: 'You\'ve earned a bonus of **100 Gold**, **50 Stamina**, and **100 XP** for completing the tutorial!', inline: false },
-            { name: '📢 Join the Community', value: 'Use `{prefix}vote` to support the bot and earn awesome rewards!', inline: false }
-        ],
-        footer: 'Step 7 of 7 • Tutorial Complete!'
+        id: 'select_dungeon',
+        text: (prefix) =>
+            `# 🏰 Choosing Your Challenge\n` +
+            `-# Step 7 of 10\n\n` +
+            `*"Before storming a dungeon, you must choose which one to enter!"*\n\n` +
+            `### 📋 Task: Select a Dungeon\n` +
+            `> Use \`${prefix}select dungeon\` to pick from available dungeons.\n` +
+            `> Dungeons have different tiers, enemies, and rewards.\n\n` +
+            `> 📊 Pick one that matches your level!\n\n` +
+            `-# 💡 You can change your selected dungeon anytime with ${prefix}select dungeon`,
+        waitForEvent: 'dungeonSelected',
+        expectedCommands: [],
+        hint: `Type select dungeon to pick a dungeon`,
+    },
+
+    8: {
+        id: 'dungeon',
+        text: (prefix) =>
+            `# ⚔️ Into the Dungeon\n` +
+            `-# Step 8 of 10\n\n` +
+            `*"Time for your first real challenge! Dungeons are how your Pal grows stronger."*\n\n` +
+            `### 📋 Task: Enter a Dungeon\n` +
+            `> Use \`${prefix}dungeon\` to enter the dungeon with your active Pal.\n` +
+            `> Fight through floors • Earn loot & XP • Your Pal levels up!\n\n` +
+            `> 🏃 You can **flee** from a floor if things get too tough\n` +
+            `> 💀 If your Pal faints, use a healing potion with \`${prefix}use\`\n\n` +
+            `-# 💡 Equip your Pal and use potions before tough fights`,
+        waitForEvent: 'dungeonAttempt',    
+        expectedCommands: [],
+        hint: `Type dungeon to enter your first challenge`,
+    },
+
+    9: {
+        id: 'profile',
+        text: (prefix) =>
+            `# 📊 Your Progress\n` +
+            `-# Step 9 of 10\n\n` +
+            `*"Let's see how far you've come, apprentice!"*\n\n` +
+            `### 📋 Task: Check Your Profile\n` +
+            `> Use \`${prefix}profile\` to see your level, gold, stats, and achievements.\n` +
+            `> Everything you do earns **XP** — forage, brew, craft, dungeon!\n\n` +
+            `-# 💡 Use ${prefix}quest to accept daily/weekly quests for bonus rewards`,
+        expectedCommands: ['profile'],
+        hint: `Type profile to see your progress`,
+    },
+
+    10: {
+        id: 'complete',
+        text: (prefix) =>
+            `# 🎉 Tutorial Complete!\n\n` +
+            `*"Well done, apprentice! You've learned the fundamentals of alchemy. But the journey has only just begun..."*\n\n` +
+            `### 🎁 Rewards Earned\n` +
+            `> 💰 **+${COMPLETION_REWARDS.gold} Gold**\n` +
+            `> ⚡ **+${COMPLETION_REWARDS.stamina} Stamina**\n` +
+            `> 📊 **+${COMPLETION_REWARDS.xp} XP**\n\n` +
+            `### 🗺️ What's Next?\n` +
+            `> 🔬 \`${prefix}research\` — Discover new recipes in your lab\n` +
+            `> ⚒️ \`${prefix}craft\` — Forge equipment for your Pals\n` +
+            `> 📋 \`${prefix}quest\` — Accept quests for daily rewards\n` +
+            `> 🏠 \`${prefix}lab\` — Upgrade your laboratory\n` +
+            `> 🥚 \`${prefix}breed\` — Breed Pals to create eggs\n` +
+            `> ❓ \`${prefix}help\` — Full command list\n\n` +
+            `-# Go forth and make your mark upon this world, alchemist! ✨`,
+        expectedCommands: [],
+        hint: `Click Finish to claim your rewards!`,
+        isLast: true
     }
 };
 
 const TOTAL_STEPS = Object.keys(steps).length;
 
-// Reward for completing the full tutorial
-const COMPLETION_REWARDS = {
-    gold: 100,
-    stamina: 50,
-    xp: 100
-};
-
 module.exports = {
     MENTOR_NAME,
     MENTOR_ICON,
     TUTORIAL_COLOR,
+    TUTORIAL_FORAGE_LOOT,
+    TUTORIAL_RECIPE_ID,
+    COMPLETION_REWARDS,
     steps,
     TOTAL_STEPS,
-    COMPLETION_REWARDS
 };

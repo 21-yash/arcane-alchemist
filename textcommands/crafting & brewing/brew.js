@@ -1,353 +1,344 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const {
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ContainerBuilder,
+    TextDisplayBuilder,
+    SeparatorBuilder,
+    MessageFlags
+} = require("discord.js");
 const Player = require("../../models/Player");
-const { createErrorEmbed, createSuccessEmbed, createWarningEmbed, createInfoEmbed } = require("../../utils/embed");
+const { createErrorEmbed } = require("../../utils/embed");
 const { grantPlayerXp } = require("../../utils/leveling");
 const GameData = require('../../utils/gameData');
 const { updateQuestProgress } = require('../../utils/questSystem');
 const CommandHelpers = require('../../utils/commandHelpers');
 const LabManager = require('../../utils/labManager');
+const config = require('../../config/config.json');
+const e = require('../../utils/emojis');
 
 const activeBrewingSessions = new Set();
-
-// Base success rate for brewing (70%)
 const BASE_BREWING_SUCCESS_RATE = 0.70;
+const CAULDRON_COLOR = 0x7C3AED; // Purple
 
-/**
- * Input sanitizer and validator
- */
+// ── Input Validator ─────────────────────────────────────────────────
+
 class BrewInputValidator {
-    /**
-     * Sanitize user input text
-     * @param {string} input - Raw user input
-     * @returns {string} Sanitized input
-     */
     static sanitizeInput(input) {
         if (typeof input !== 'string') return '';
-        
-        // Remove excessive whitespace and normalize
-        return input
-            .trim()
-            .replace(/\s+/g, ' ')
-            .substring(0, 500); // Limit input length
+        return input.trim().replace(/\s+/g, ' ').substring(0, 500);
     }
 
-    /**
-     * Validate and parse brewing input
-     * @param {string} input - User input string
-     * @param {Object} player - Player object
-     * @returns {Object} Validation result
-     */
     static parseBrewInput(input, player, options = {}) {
         const sanitized = this.sanitizeInput(input);
         const maxBatch = options.maxBatch || 1;
-        
+        const currentSelection = options.currentSelection || {};
+        let brewQuantity = options.currentQuantity || 1;
+
         if (!sanitized) {
-            return {
-                success: false,
-                error: "Please provide ingredients to brew with."
-            };
+            return { success: false, error: "Type ingredients in format: **quantity ingredient_name**\nExample: `2 moonpetal_herb, 1 crystal_shard`" };
         }
 
         let inputText = sanitized;
-        let brewQuantity = 1;
-        
-        // Extract quantity multiplier (x2, x3, etc.)
+
         const quantityMatch = inputText.match(/\s+x(\d+)$/i);
         if (quantityMatch) {
             brewQuantity = parseInt(quantityMatch[1]);
             if (isNaN(brewQuantity) || brewQuantity < 1 || brewQuantity > maxBatch) {
-                return {
-                    success: false,
-                    error: `Brew quantity must be between 1 and ${maxBatch}.`
-                };
+                return { success: false, error: `Brew quantity must be between **1** and **${maxBatch}**.` };
             }
             inputText = inputText.replace(/\s+x\d+$/i, '');
         }
 
-        // Parse ingredient parts
-        const inputParts = inputText
-            .split(',')
-            .map(part => part.trim())
-            .filter(part => part.length > 0);
+        const inputParts = inputText.split(',').map(p => p.trim()).filter(p => p.length > 0);
 
-        if (inputParts.length === 0) {
-            return {
-                success: false,
-                error: "Please provide at least one ingredient."
-            };
+        if (inputParts.length === 0 && !quantityMatch) {
+            return { success: false, error: "Add at least **one ingredient** to start brewing." };
         }
 
         if (inputParts.length > 10) {
-            return {
-                success: false,
-                error: "Too many ingredients. Maximum 10 ingredients allowed."
-            };
+            return { success: false, error: "Too many ingredients — maximum **10** per recipe." };
         }
 
-        const ingredients = {};
-        
+        const newIngredients = { ...currentSelection };
+
         for (const part of inputParts) {
-            const result = this.parseIngredientPart(part, player, brewQuantity);
-            if (!result.success) {
-                return result;
-            }
-            ingredients[result.itemId] = result.quantity;
+            const result = this.parseIngredientPart(part, player);
+            if (!result.success) return result;
+            newIngredients[result.itemId] = (newIngredients[result.itemId] || 0) + result.quantity;
         }
 
-        return {
-            success: true,
-            ingredients,
-            brewQuantity
-        };
+        if (Object.keys(newIngredients).length > 10) {
+            return { success: false, error: "Too many unique ingredients — maximum **10** per recipe." };
+        }
+
+        // Validate the entire combined selection against inventory
+        for (const [itemId, totalQty] of Object.entries(newIngredients)) {
+            const playerItem = player.inventory.find(item => item.itemId === itemId);
+            const itemData = GameData.getItem(itemId);
+            const totalNeeded = totalQty * brewQuantity;
+
+            if (!playerItem || playerItem.quantity < totalNeeded) {
+                const available = playerItem ? playerItem.quantity : 0;
+                const emoji = CommandHelpers.getItemEmoji(itemId);
+                let errorMsg = `**Not enough** ${emoji} ${itemData?.name || itemId}\n`;
+                if (brewQuantity > 1) {
+                    errorMsg += `Need total **${totalQty} x${brewQuantity} = ${totalNeeded}** — you have **${available}**`;
+                } else {
+                    errorMsg += `Need total **${totalQty}** — you have **${available}**`;
+                }
+                return { success: false, error: errorMsg };
+            }
+        }
+
+        return { success: true, ingredients: newIngredients, brewQuantity };
     }
 
-    /**
-     * Parse a single ingredient part
-     * @param {string} part - Single ingredient string
-     * @param {Object} player - Player object
-     * @param {number} brewQuantity - Number of brewing attempts
-     * @returns {Object} Parse result
-     */
-    static parseIngredientPart(part, player, brewQuantity) {
-        // Match pattern: "number ingredient_name" or "number ingredient name"
+    static parseIngredientPart(part, player) {
         const match = part.match(/^(\d+)\s+(.+)$/);
-        
+
         if (!match) {
-            return {
-                success: false,
-                error: `Invalid format: "${part}". Use format: **quantity ingredient_name**`
-            };
+            return { success: false, error: `**Invalid format:** \`${part}\`\nUse: \`quantity ingredient_name\` (e.g. \`2 moonpetal_herb\`)` };
         }
 
         const quantity = parseInt(match[1]);
         const itemNameInput = match[2].trim();
 
         if (isNaN(quantity) || quantity < 1 || quantity > 99) {
-            return {
-                success: false,
-                error: `Invalid quantity for "${itemNameInput}". Must be between 1 and 99.`
-            };
+            return { success: false, error: `**Bad quantity** for \`${itemNameInput}\` — must be between **1** and **99**.` };
         }
 
-        // Find matching item
         const itemResult = this.findIngredientItem(itemNameInput);
-        if (!itemResult.success) {
-            return itemResult;
-        }
+        if (!itemResult.success) return itemResult;
 
-        // Validate item type
         const materialTypes = ["crafting_material", "ingredient"];
         const itemData = GameData.getItem(itemResult.itemId);
         if (!itemData || !materialTypes.includes(itemData.type)) {
-            return {
-                success: false,
-                error: `"${itemData ? itemData.name : itemNameInput}" is not a brewing ingredient or material.`
-            };
+            return { success: false, error: `**${itemData?.name || itemNameInput}** isn't a brewing ingredient.` };
         }
 
-        // Check player inventory
-        const playerItem = player.inventory.find(item => item.itemId === itemResult.itemId);
-        const totalNeeded = quantity * brewQuantity;
-        
-        if (!playerItem || playerItem.quantity < totalNeeded) {
-            const available = playerItem ? playerItem.quantity : 0;
-            let errorMsg = `Not enough ${itemData.name}. `;
-            
-            if (brewQuantity > 1) {
-                errorMsg += `Need ${quantity} x${brewQuantity} = ${totalNeeded}, but you have ${available}.`;
-            } else {
-                errorMsg += `Need ${quantity}, but you have ${available}.`;
-            }
-            
-            return {
-                success: false,
-                error: errorMsg
-            };
-        }
-
-        return {
-            success: true,
-            itemId: itemResult.itemId,
-            quantity
-        };
+        return { success: true, itemId: itemResult.itemId, quantity };
     }
 
-    /**
-     * Find ingredient item by name or ID
-     * @param {string} input - Item name or ID input
-     * @returns {Object} Find result
-     */
     static findIngredientItem(input) {
         const searchTerm = input.toLowerCase().replace(/\s+/g, '_');
-        
-        // First, try exact ID match
-        if (GameData.items[searchTerm]) {
-            return {
-                success: true,
-                itemId: searchTerm
-            };
-        }
 
-        // Try to find by normalized name
+        if (GameData.items[searchTerm]) return { success: true, itemId: searchTerm };
+
         const itemId = Object.keys(GameData.items).find(id => {
             const item = GameData.getItem(id);
             if (!item) return false;
-            
             const normalizedItemName = item.name.toLowerCase().replace(/\s+/g, '_');
             return normalizedItemName === searchTerm || id.toLowerCase() === searchTerm;
         });
 
-        if (itemId) {
-            return {
-                success: true,
-                itemId
-            };
-        }
+        if (itemId) return { success: true, itemId };
 
-        // Try partial matching for user-friendly search
         const partialMatch = Object.keys(GameData.items).find(id => {
             const item = GameData.getItem(id);
             if (!item) return false;
-            
             const normalizedItemName = item.name.toLowerCase().replace(/\s+/g, '_');
-            return normalizedItemName.includes(searchTerm) || 
+            return normalizedItemName.includes(searchTerm) ||
                    searchTerm.includes(normalizedItemName.substring(0, 4));
         });
 
-        if (partialMatch) {
-            return {
-                success: true,
-                itemId: partialMatch
-            };
-        }
+        if (partialMatch) return { success: true, itemId: partialMatch };
 
-        return {
-            success: false,
-            error: `Ingredient "${input}" not found. Check spelling or use \`/ingredients\` to see available items.`
-        };
+        return { success: false, error: `**Ingredient not found:** \`${input}\`\nCheck spelling or use \`forage\` to gather more ingredients.` };
     }
 }
 
-/**
- * Recipe validator and matcher
- */
+// ── Recipe Handler ──────────────────────────────────────────────────
+
 class RecipeHandler {
-    /**
-     * Check if player has recipe unlocked
-     * @param {Object} player - Player object
-     * @param {string} recipeId - Recipe ID to check
-     * @returns {boolean} Whether recipe is unlocked
-     */
     static hasRecipeUnlocked(player, recipeId) {
         return player.grimoire && player.grimoire.includes(recipeId);
     }
 
-    /**
-     * Find matching recipe for ingredients
-     * @param {Object} ingredients - Selected ingredients
-     * @param {Object} player - Player object
-     * @returns {Object} Match result
-     */
     static findMatchingRecipe(ingredients, player) {
         let bestMatch = null;
         let bestMatchId = null;
 
         for (const [recipeId, recipeData] of Object.entries(GameData.recipes)) {
-            // Check if player has recipe unlocked
-            if (!this.hasRecipeUnlocked(player, recipeId)) {
-                continue;
-            }
+            if (!this.hasRecipeUnlocked(player, recipeId)) continue;
 
             const requiredIngredients = recipeData.ingredients.reduce((acc, ing) => {
                 acc[ing.itemId] = ing.quantity;
                 return acc;
             }, {});
 
-            // Check exact match
             if (this.isExactMatch(ingredients, requiredIngredients)) {
                 bestMatch = recipeData;
                 bestMatchId = recipeId;
-                break; // Exact match found, stop searching
+                break;
             }
         }
 
-        return {
-            recipe: bestMatch,
-            recipeId: bestMatchId,
-            hasMatch: bestMatch !== null
-        };
+        return { recipe: bestMatch, recipeId: bestMatchId, hasMatch: bestMatch !== null };
     }
 
-    /**
-     * Check if ingredients exactly match recipe requirements
-     * @param {Object} submitted - Submitted ingredients
-     * @param {Object} required - Required ingredients
-     * @returns {boolean} Whether it's an exact match
-     */
     static isExactMatch(submitted, required) {
         const submittedKeys = Object.keys(submitted).sort();
         const requiredKeys = Object.keys(required).sort();
 
-        // Must have same number of ingredients
-        if (submittedKeys.length !== requiredKeys.length) {
-            return false;
-        }
-
-        // All ingredients and quantities must match exactly
-        return requiredKeys.every(itemId => 
-            submitted[itemId] === required[itemId]
-        );
+        if (submittedKeys.length !== requiredKeys.length) return false;
+        return requiredKeys.every(itemId => submitted[itemId] === required[itemId]);
     }
 
-    /**
-     * Get available recipes for player
-     * @param {Object} player - Player object
-     * @returns {Array} Available recipe IDs
-     */
     static getAvailableRecipes(player) {
         return player.grimoire || [];
     }
 }
 
-/**
- * Calculate brewing success rate
- * @param {Object} labEffects - Lab effects object
- * @returns {number} Success rate (0-1)
- */
 function calculateSuccessRate(labEffects) {
     let successRate = BASE_BREWING_SUCCESS_RATE;
-    
-    // Add lab bonus if available
     if (labEffects?.successRateBonus) {
         successRate += labEffects.successRateBonus;
     }
-    
-    // Cap at 100%
     return Math.min(successRate, 1.0);
 }
 
-/**
- * Get player ingredients filtered by type
- * @param {Object} player - Player object
- * @returns {Array} Available ingredients for UI
- */
-function getPlayerIngredients(player) {
-    const materialTypes = ["crafting_material", "ingredient"];
-    
-    return player.inventory
-        .filter(item => {
-            const itemData = GameData.getItem(item.itemId);
-            return itemData && materialTypes.includes(itemData.type);
-        })
-        .map(item => {
-            const itemData = GameData.getItem(item.itemId);
-            return {
-                label: `${itemData.name} (x${item.quantity})`,
-                value: item.itemId,
-                description: itemData.description.substring(0, 100)
-            };
-        });
+// ── Text Builders ───────────────────────────────────────────────────
+
+function buildCauldronText(player, selectedIngredients, brewQuantity, successRate, maxBatch, labEffects, prefix) {
+    const availableRecipes = RecipeHandler.getAvailableRecipes(player);
+    const dustEmoji = config.emojis.arcaneDust || '✨';
+
+    let text = `# ⚗️ Alchemist's Cauldron\n`;
+    text += `-# Type ingredients below to brew potions\n\n`;
+
+    // Stats row
+    text += `### 📊 Brewing Stats\n`;
+    text += `> 📚 **${availableRecipes.length}** known recipe${availableRecipes.length !== 1 ? 's' : ''}`;
+    text += ` · ${e.success} **${(successRate * 100).toFixed(0)}%** success rate`;
+    if (labEffects?.successRateBonus) {
+        text += ` (+${(labEffects.successRateBonus * 100).toFixed(0)}% lab)`;
+    }
+    if (maxBatch > 1) {
+        text += `\n> 📦 Batch: up to **x${maxBatch}** per brew`;
+    }
+    text += `\n\n`;
+
+    // Input format
+    if (maxBatch > 1) {
+        text += `### 📝 Multiple Brewing\n`;
+        text += `> Add \`x3\` at end → Eg: 2 moonpetal_herb, 1 crystal_shard \`x3\` to brew 3x at a time\n`;
+        text += `\n`;
+    }
+
+    if (Object.keys(selectedIngredients).length > 0) {
+        text += `### 🧪 Selected Ingredients\n`;
+        for (const [itemId, qty] of Object.entries(selectedIngredients)) {
+            const itemData = GameData.getItem(itemId);
+            const emoji = CommandHelpers.getItemEmoji(itemId);
+            text += `> ${emoji} **${itemData.name}** x${qty}`;
+            if (brewQuantity > 1) text += ` (x${brewQuantity} = ${qty * brewQuantity} total)`;
+            text += `\n`;
+        }
+
+        if (brewQuantity > 1) {
+            text += `> 📦 **Batch:** x${brewQuantity}\n`;
+        }
+
+        const matchResult = RecipeHandler.findMatchingRecipe(selectedIngredients, player);
+        if (matchResult.hasMatch) {
+            const resultItem = GameData.getItem(matchResult.recipe.result.itemId);
+            const resultEmoji = CommandHelpers.getItemEmoji(matchResult.recipe.result.itemId);
+            const totalQty = matchResult.recipe.result.quantity * brewQuantity;
+            text += `\n${e.success} **Recipe Match!**\n`;
+            text += `> Will brew: ${resultEmoji} **${resultItem.name}** x${totalQty}\n`;
+            text += `> Success chance: **${(successRate * 100).toFixed(0)}%** per brew\n`;
+        } else {
+            text += `\n${e.error} **Ingredients do not match any of your known recipes**\n`;
+            text += `> Use \`${prefix}research\` to discover more recipes\n`;
+        }
+    }
+
+    return text;
 }
+
+function buildBrewResultText(resultItemData, resultEmoji, successfulBrews, failedBrews, totalDust, brewQuantity, successRate) {
+    const dustEmoji = config.emojis.arcaneDust || '✨';
+
+    if (successfulBrews > 0 && failedBrews > 0) {
+        // Mixed results
+        const totalQty = resultItemData.quantity * successfulBrews;
+        let text = `# ⚗️ Brewing Complete\n`;
+        text += `-# Mixed results...\n\n`;
+        text += `### 📊 Results\n`;
+        text += `> ${e.success} **${successfulBrews}** successful · ${e.error} **${failedBrews}** failed\n\n`;
+        text += `> ${resultEmoji} **+${totalQty}x ${resultItemData.name}**\n`;
+        text += `> ${dustEmoji} **+${totalDust}** Arcane Dust *(from failures)*\n`;
+        return text;
+    } else if (successfulBrews > 0) {
+        const totalQty = resultItemData.quantity * successfulBrews;
+        let text = `## ${e.success} Brewing Success!\n\n`;
+        text += `### ${resultEmoji} ${resultItemData.name}\n`;
+        text += `> Brewed **x${totalQty}** successfully!`;
+        if (brewQuantity > 1) text += ` (${successfulBrews} batches)`;
+        text += `\n`;
+        return text;
+    } else {
+        let text = `# ${e.error} Brewing Failed!\n\n`;
+        text += `All **${failedBrews}** attempt${failedBrews > 1 ? 's' : ''} failed — the ingredients fizzled.\n\n`;
+        text += `> ${dustEmoji} Salvaged **${totalDust} Arcane Dust**\n`;
+        return text;
+    }
+}
+
+// ── Container Builders ──────────────────────────────────────────────
+
+function buildCauldronContainer(player, selectedIngredients, brewQuantity, successRate, maxBatch, labEffects, prefix) {
+    const container = new ContainerBuilder().setAccentColor(CAULDRON_COLOR);
+    container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+            buildCauldronText(player, selectedIngredients, brewQuantity, successRate, maxBatch, labEffects, prefix)
+        )
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
+
+    const hasIngredients = Object.keys(selectedIngredients).length > 0;
+    const hasRecipeMatch = hasIngredients && RecipeHandler.findMatchingRecipe(selectedIngredients, player).hasMatch;
+
+    container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId("brew_confirm")
+                .setLabel("Brew")
+                .setStyle(ButtonStyle.Success)
+                .setEmoji("⚗️")
+                .setDisabled(!hasRecipeMatch),
+            new ButtonBuilder()
+                .setCustomId("brew_clear")
+                .setLabel("Clear")
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji(e.reload)
+                .setDisabled(!hasIngredients),
+            new ButtonBuilder()
+                .setCustomId("brew_cancel")
+                .setLabel("Cancel")
+                .setStyle(ButtonStyle.Danger)
+                .setEmoji(e.error)
+        )
+    );
+
+    container.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
+    container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+            `-# •  Type ingredients in chat to add them  •  \`${prefix}grimoire\` to see known recipes`
+        )
+    );
+
+    return container;
+}
+
+function buildResultContainer(text, color) {
+    const container = new ContainerBuilder().setAccentColor(color || CAULDRON_COLOR);
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
+    return container;
+}
+
+// ── Main Command ────────────────────────────────────────────────────
 
 module.exports = {
     name: "brew",
@@ -355,387 +346,239 @@ module.exports = {
     cooldown: 10,
     async execute(message, args, client, prefix) {
         try {
-            // Check if user already has an active brewing session
             if (activeBrewingSessions.has(message.author.id)) {
                 return message.reply({
-                    embeds: [
-                        createErrorEmbed(
-                            "Already Brewing",
-                            "You already have an active brewing session! Please finish or cancel it first."
-                        )
-                    ]
+                    embeds: [createErrorEmbed(
+                        "Already Brewing",
+                        "You already have an active brewing session!\nFinish or cancel it first."
+                    )]
                 });
             }
 
             const playerResult = await CommandHelpers.validatePlayer(message.author.id, prefix);
-            if (!playerResult.success) {
-                return message.reply({ embeds: [playerResult.embed] });
-            }
+            if (!playerResult.success) return message.reply({ embeds: [playerResult.embed] });
             const player = playerResult.player;
             const labContext = await LabManager.loadPlayerLab(player);
             const labEffects = labContext.effects;
-            const lab = labContext.lab;
             const maxBatch = LabManager.getMaxBrewBatch(labEffects);
             const successRate = calculateSuccessRate(labEffects);
 
-            const ingredients = getPlayerIngredients(player);
-            if (ingredients.length === 0) {
+            // Check ingredients
+            const materialTypes = ["crafting_material", "ingredient"];
+            const hasIngredients = player.inventory.some(item => {
+                const itemData = GameData.getItem(item.itemId);
+                return itemData && materialTypes.includes(itemData.type);
+            });
+
+            if (!hasIngredients) {
                 return message.reply({
-                    embeds: [
-                        createErrorEmbed(
-                            "No Ingredients",
-                            `You don't have any ingredients to brew with! Use \`${prefix}forage\` to find some.`
-                        )
-                    ]
+                    embeds: [createErrorEmbed(
+                        "No Ingredients",
+                        `You don't have any brewing ingredients!\n\n> 🏔️ Use \`${prefix}forage\` to gather ingredients\n> ⚔️ Clear dungeons for rare drops`
+                    )]
                 });
             }
 
-            // Check if player has any recipes unlocked
+            // Check recipes
             const availableRecipes = RecipeHandler.getAvailableRecipes(player);
             if (availableRecipes.length === 0) {
                 return message.reply({
-                    embeds: [
-                        createErrorEmbed(
-                            "No Recipes Known",
-                            `You don't know any recipes yet! Discover recipes through exploration or purchase recipe books.`
-                        )
-                    ]
+                    embeds: [createErrorEmbed(
+                        "No Recipes Known",
+                        `You don't know any brewing recipes yet!\n\n> 🔬 Use \`${prefix}research\` to discover recipes\n> 🏪 Buy recipe scrolls from the \`${prefix}shop\``
+                    )]
                 });
             }
 
-            // Mark user as having an active session
             activeBrewingSessions.add(message.author.id);
 
-            // Brewing session state
-            let selectedIngredients = {}; // Track ingredient quantities { itemId: quantity }
-            let brewQuantity = 1; // Track how many times to brew the recipe
-            let lastValidInput = ""; // Store last valid input to prevent clearing on invalid input
-
-            /**
-             * Create the cauldron embed
-             * @returns {Object} Discord embed
-             */
-            const createCauldronEmbed = () => {
-                let description = `Enter ingredients in format: **quantity ingredient_name, quantity ingredient_name**\nExample: \`2 moonpetal_herb, 1 crystal_shard\`\n\nTo brew multiple potions, add **x[number]** at the end:\nExample: \`2 moonpetal_herb, 1 crystal_shard x3\`\n\n`;
-                description += `Max batch size: **${maxBatch}** potion${maxBatch === 1 ? '' : 's'} per brew.\n`;
-                description += `Base Success Rate: **${(BASE_BREWING_SUCCESS_RATE * 100).toFixed(0)}%**\n`;
-                description += `Current Success Rate: **${(successRate * 100).toFixed(0)}%**`;
-                
-                if (labEffects?.successRateBonus) {
-                    description += ` (+${(labEffects.successRateBonus * 100).toFixed(0)}% from lab)\n`;
-                } else {
-                    description += `\n`;
-                }
-                
-                description += `\n📚 **Known Recipes:** ${availableRecipes.length}\n`;
-
-                if (Object.keys(selectedIngredients).length > 0) {
-                    description += `\n**Selected Ingredients:**\n`;
-                    Object.entries(selectedIngredients).forEach(([itemId, qty]) => {
-                        const itemData = GameData.getItem(itemId);
-                        const itemEmoji = CommandHelpers.getItemEmoji(itemId);
-                        description += `> ${itemEmoji} ${itemData.name} x${qty}\n`;
-                    });
-                    
-                    if (brewQuantity > 1) {
-                        description += `\n**Brew Quantity:** ${brewQuantity}x`;
-                        description += `\n**Total Ingredients Needed:**\n`;
-                        Object.entries(selectedIngredients).forEach(([itemId, qty]) => {
-                            const itemData = GameData.getItem(itemId);
-                            const itemEmoji = CommandHelpers.getItemEmoji(itemId);
-                            description += `> ${itemEmoji} ${itemData.name} x${qty * brewQuantity}\n`;
-                        });
-                    }
-
-                    // Show recipe match status
-                    const matchResult = RecipeHandler.findMatchingRecipe(selectedIngredients, player);
-                    if (matchResult.hasMatch) {
-                        const resultItem = GameData.getItem(matchResult.recipe.result.itemId);
-                        description += `\n✅ **Recipe Match Found!**\n> Will create: ${resultItem.name} x${matchResult.recipe.result.quantity * brewQuantity}`;
-                        description += `\n> Success Chance: **${(successRate * 100).toFixed(0)}%** per brew`;
-                    } else {
-                        description += `\n❌ **No Recipe Match**`;
-                    }
-                }
-
-                return createInfoEmbed("Alchemist's Cauldron", description, {
-                    footer: {
-                        text: 'Type your ingredients below, then click "Brew"'
-                    }
-                });
-            };
-
-            /**
-             * Create button components
-             * @returns {Array} Button components
-             */
-            const createComponents = () => {
-                const hasIngredients = Object.keys(selectedIngredients).length > 0;
-                
-                const buttonRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId("brew_confirm")
-                        .setLabel("Brew")
-                        .setStyle(ButtonStyle.Success)
-                        .setEmoji("⚗️")
-                        .setDisabled(!hasIngredients),
-                    new ButtonBuilder()
-                        .setCustomId("brew_clear")
-                        .setLabel("Clear All")
-                        .setStyle(ButtonStyle.Secondary)
-                        .setDisabled(!hasIngredients),
-                    new ButtonBuilder()
-                        .setCustomId("brew_cancel")
-                        .setLabel("Cancel")
-                        .setStyle(ButtonStyle.Danger)
-                );
-
-                return [buttonRow];
-            };
+            let selectedIngredients = {};
+            let brewQuantity = 1;
 
             const reply = await message.reply({
-                embeds: [createCauldronEmbed()],
-                components: createComponents(),
-                ephemeral: true
+                components: [buildCauldronContainer(player, selectedIngredients, brewQuantity, successRate, maxBatch, labEffects, prefix)],
+                flags: MessageFlags.IsComponentsV2
             });
 
-            // Message collector for text input
             const messageCollector = message.channel.createMessageCollector({
                 filter: (m) => m.author.id === message.author.id,
-                time: 5 * 60 * 1000
+                time: 2 * 60 * 1000
             });
 
-            // Component collector for buttons
             const componentCollector = reply.createMessageComponentCollector({
                 filter: (i) => i.user.id === message.author.id,
-                time: 5 * 60 * 1000
+                time: 2 * 60 * 1000
             });
 
             messageCollector.on("collect", async (m) => {
-                // Handle cancel command
                 if (m.content.toLowerCase().trim() === "cancel") {
                     activeBrewingSessions.delete(message.author.id);
-                    await reply.edit({
-                        embeds: [
-                            createWarningEmbed(
-                                "Brewing Cancelled",
-                                "You have cleared the cauldron."
-                            )
-                        ],
-                        components: []
-                    });
+                    const cancelContainer = buildResultContainer(
+                        `## ${e.warning} Brewing Cancelled\nYou have cleared the cauldron.`,
+                        0xF59E0B
+                    );
+                    await reply.edit({ components: [cancelContainer], flags: MessageFlags.IsComponentsV2 });
                     messageCollector.stop();
-                    componentCollector.stop();
+                    componentCollector.stop('cancelled');
                     return;
                 }
 
-                // Parse and validate input
-                const parseResult = BrewInputValidator.parseBrewInput(m.content, player, { maxBatch });
-                
+                const parseResult = BrewInputValidator.parseBrewInput(m.content, player, { 
+                    maxBatch, 
+                    currentSelection: selectedIngredients, 
+                    currentQuantity: brewQuantity 
+                });
+
                 if (!parseResult.success) {
-                    if (parseResult.error && parseResult.error.startsWith("Invalid format:")) {
-                        return; 
-                    }
-                    // Send error but don't clear existing ingredients
+                    if (parseResult.error && parseResult.error.startsWith("**Invalid format:**")) return;
+
+                    const errContainer = new ContainerBuilder().setAccentColor(0xEF4444);
+                    errContainer.addTextDisplayComponents(
+                        new TextDisplayBuilder().setContent(`${e.error} ${parseResult.error}`)
+                    );
                     await m.reply({
-                        embeds: [createErrorEmbed("Invalid Input", parseResult.error)],
+                        components: [errContainer],
+                        flags: MessageFlags.IsComponentsV2,
                         allowedMentions: { repliedUser: false }
                     });
                     return;
                 }
 
-                // Update state only on successful parse
                 selectedIngredients = parseResult.ingredients;
                 brewQuantity = parseResult.brewQuantity;
-                lastValidInput = m.content;
 
-                // Update the interface
                 await reply.edit({
-                    embeds: [createCauldronEmbed()],
-                    components: createComponents()
+                    components: [buildCauldronContainer(player, selectedIngredients, brewQuantity, successRate, maxBatch, labEffects, prefix)],
+                    flags: MessageFlags.IsComponentsV2
                 });
             });
 
-            componentCollector.on("collect", async (i) => {
-                if (!i.isButton()) return;
+            componentCollector.on("collect", async (interaction) => {
+                try {
+                    if (!interaction.isButton()) return;
 
-                switch (i.customId) {
-                    case "brew_clear":
-                        selectedIngredients = {};
-                        brewQuantity = 1;
-                        lastValidInput = "";
-                        await i.update({
-                            embeds: [createCauldronEmbed()],
-                            components: createComponents()
-                        });
-                        break;
-
-                    case "brew_cancel":
-                        activeBrewingSessions.delete(message.author.id);
-                        await i.update({
-                            embeds: [
-                                createWarningEmbed(
-                                    "Brewing Cancelled",
-                                    "You have cleared the cauldron."
-                                )
-                            ],
-                            components: []
-                        });
-                        messageCollector.stop();
-                        componentCollector.stop();
-                        break;
-
-                    case "brew_confirm":
-                        if (Object.keys(selectedIngredients).length === 0) {
-                            await i.reply({
-                                embeds: [createErrorEmbed("No Ingredients", "Please add ingredients first.")],
-                                ephemeral: true
+                    switch (interaction.customId) {
+                        case "brew_clear":
+                            selectedIngredients = {};
+                            brewQuantity = 1;
+                            await interaction.update({
+                                components: [buildCauldronContainer(player, selectedIngredients, brewQuantity, successRate, maxBatch, labEffects, prefix)],
+                                flags: MessageFlags.IsComponentsV2
                             });
-                            return;
-                        }
+                            break;
 
-                        // Find matching recipe
-                        const matchResult = RecipeHandler.findMatchingRecipe(selectedIngredients, player);
-
-                        if (!matchResult.hasMatch) {
-                            await i.reply({
-                                embeds: [createErrorEmbed("No Recipe Match", "Those ingredients don't match any recipe you know.")],
-                                ephemeral: true
+                        case "brew_cancel":
+                            activeBrewingSessions.delete(message.author.id);
+                            const cancelContainer = buildResultContainer(
+                                `## ${e.warning} Brewing Cancelled\nYou have cleared the cauldron.`,
+                                0xF59E0B
+                            );
+                            await interaction.update({
+                                components: [cancelContainer],
+                                flags: MessageFlags.IsComponentsV2
                             });
-                            return;
-                        }
+                            messageCollector.stop();
+                            componentCollector.stop('cancelled');
+                            break;
 
-                        // Execute brewing
-                        const brewResult = await this.executeBrewing(
-                            player,
-                            selectedIngredients,
-                            brewQuantity,
-                            matchResult,
-                            client,
-                            message,
-                            labEffects,
-                            successRate
-                        );
+                        case "brew_confirm":
+                            if (Object.keys(selectedIngredients).length === 0) return;
 
-                        try {
-                            await i.update({
-                                embeds: [brewResult.embed],
-                                components: []
-                            });
-                        } catch (err) {
-                            // Interaction expired — fallback to editing the message directly
-                            if (err.code === 10062) {
-                                await reply.edit({ embeds: [brewResult.embed], components: [] }).catch(() => {});
+                            const matchResult = RecipeHandler.findMatchingRecipe(selectedIngredients, player);
+                            if (!matchResult.hasMatch) return; // safety fallback
+
+                            const brewResult = await this.executeBrewing(
+                                player, selectedIngredients, brewQuantity,
+                                matchResult, client, message, labEffects, successRate
+                            );
+
+                            try {
+                                await interaction.update({
+                                    components: [brewResult.container],
+                                    flags: MessageFlags.IsComponentsV2
+                                });
+                            } catch (err) {
+                                if (err.code === 10062) {
+                                    await reply.edit({
+                                        components: [brewResult.container],
+                                        flags: MessageFlags.IsComponentsV2
+                                    }).catch(() => {});
+                                }
                             }
-                        }
 
-                        activeBrewingSessions.delete(message.author.id);
-                        messageCollector.stop();
-                        componentCollector.stop();
-                        break;
+                            activeBrewingSessions.delete(message.author.id);
+                            messageCollector.stop();
+                            componentCollector.stop('brew_done');
+                            break;
+                    }
+                } catch (error) {
+                    console.error('Brew interaction error:', error);
+                    if (!interaction.replied && !interaction.deferred) {
+                        await interaction.reply({ content: `${e.error} An error occurred.`, ephemeral: true }).catch(() => {});
+                    }
                 }
             });
 
-            // Cleanup handlers
-            const cleanupCollectors = () => {
-                activeBrewingSessions.delete(message.author.id);
-                messageCollector.stop();
-                componentCollector.stop();
-            };
 
             componentCollector.on("end", (collected, reason) => {
-                if (reason === "time") {
-                    reply.edit({
-                        embeds: [
-                            createWarningEmbed(
-                                "Brewing Timed Out",
-                                "Your brewing session has expired."
-                            )
-                        ],
-                        components: []
-                    }).catch(() => {});
+                // Skip timeout edit if session was resolved (confirm, cancel, etc.)
+                if (!['brew_done', 'cancelled'].includes(reason)) {
+                    const timeoutContainer = buildResultContainer(
+                        `## ${e.warning} Brewing Timed Out\nYour session has expired. Use \`${prefix}brew\` to start again.`,
+                        0xF59E0B
+                    );
+                    reply.edit({ components: [timeoutContainer], flags: MessageFlags.IsComponentsV2 }).catch(() => {});
                 }
-                cleanupCollectors();
-            });
-
-            messageCollector.on("end", (collected, reason) => {
-                if (reason === "time") {
-                    cleanupCollectors();
-                }
+                activeBrewingSessions.delete(message.author.id);
+                messageCollector.stop();
             });
 
         } catch (error) {
             console.error("Brew command error:", error);
             activeBrewingSessions.delete(message.author.id);
-            
-            const errorEmbed = createErrorEmbed(
-                "An Error Occurred",
-                "There was a problem with your brewing session. Please try again."
-            );
-
-            // Try to reply or edit based on context
             if (message.replied || message.deferred) {
-                message.followUp({ embeds: [errorEmbed] }).catch(() => {});
+                message.followUp({ embeds: [createErrorEmbed("An Error Occurred", "There was a problem with your brewing session.")] }).catch(() => {});
             } else {
-                message.reply({ embeds: [errorEmbed] }).catch(() => {});
+                message.reply({ embeds: [createErrorEmbed("An Error Occurred", "There was a problem with your brewing session.")] }).catch(() => {});
             }
         }
     },
 
-    /**
-     * Execute the brewing process
-     * @param {Object} player - Player object
-     * @param {Object} ingredients - Selected ingredients
-     * @param {number} brewQuantity - Number of brewing attempts
-     * @param {Object} matchResult - Recipe match result
-     * @param {Object} client - Discord client
-     * @param {Object} message - Discord message
-     * @param {Object} labEffects - Lab effects
-     * @param {number} successRate - Calculated success rate
-     * @returns {Object} Brewing result
-     */
     async executeBrewing(player, ingredients, brewQuantity, matchResult, client, message, labEffects = null, successRate = BASE_BREWING_SUCCESS_RATE) {
         try {
             const recipe = matchResult.recipe;
             const recipeId = matchResult.recipeId;
 
-            // Track successes and failures
             let successfulBrews = 0;
             let failedBrews = 0;
 
-            // Perform each brew attempt
+            // Tutorial override: first brew always succeeds
+            const effectiveRate = (player.tutorialStep === 5) ? 1.0 : successRate;
+
             for (let i = 0; i < brewQuantity; i++) {
-                const roll = Math.random();
-                if (roll < successRate) {
+                if (Math.random() < effectiveRate) {
                     successfulBrews++;
                 } else {
                     failedBrews++;
                 }
             }
 
-            // Update statistics
             player.stats.potionsBrewed = (player.stats.potionsBrewed || 0) + successfulBrews;
 
-            // Calculate total XP (only for successful brews)
             const totalXp = recipe.xp * successfulBrews;
-            if (totalXp > 0) {
-                await grantPlayerXp(client, message, player.userId, totalXp, { labEffects });
-            }
 
             // Ensure recipe is in grimoire
             if (!player.grimoire.includes(recipeId)) {
                 player.grimoire.push(recipeId);
             }
 
-            // Consume all ingredients (success or fail, ingredients are used)
+            // Consume all ingredients
             recipe.ingredients.forEach(ing => {
                 const playerItem = player.inventory.find(item => item.itemId === ing.itemId);
-                if (playerItem) {
-                    playerItem.quantity -= ing.quantity * brewQuantity;
-                }
+                if (playerItem) playerItem.quantity -= ing.quantity * brewQuantity;
             });
 
-            // Apply ingredient save chance for failed brews (preserves ingredients)
+            // Ingredient save chance for failures
             if (failedBrews > 0 && labEffects?.ingredientSaveChance) {
                 recipe.ingredients.forEach(ing => {
                     for (let i = 0; i < failedBrews; i++) {
@@ -744,96 +587,63 @@ module.exports = {
                             if (playerItem) {
                                 playerItem.quantity += ing.quantity;
                             } else {
-                                player.inventory.push({
-                                    itemId: ing.itemId,
-                                    quantity: ing.quantity
-                                });
+                                player.inventory.push({ itemId: ing.itemId, quantity: ing.quantity });
                             }
                         }
                     }
                 });
             }
 
-            // Add result items for successful brews
+            // Add result items
             if (successfulBrews > 0) {
                 let totalResultQuantity = recipe.result.quantity * successfulBrews;
-                
                 const resultItem = player.inventory.find(item => item.itemId === recipe.result.itemId);
-                
                 if (resultItem) {
                     resultItem.quantity += totalResultQuantity;
                 } else {
-                    player.inventory.push({
-                        itemId: recipe.result.itemId,
-                        quantity: totalResultQuantity
-                    });
+                    player.inventory.push({ itemId: recipe.result.itemId, quantity: totalResultQuantity });
                 }
 
-                // Emit events for successful brews
                 for (let i = 0; i < successfulBrews; i++) {
                     client.emit("potionBrewed", message.author.id);
                     await updateQuestProgress(message.author.id, 'brew_potions', 1, message);
                 }
             }
 
-            // Grant arcane dust for failed brews
+            // Grant arcane dust for failures
             let totalDust = 0;
             if (failedBrews > 0) {
                 totalDust = Object.keys(ingredients).length * failedBrews;
                 player.arcaneDust = (player.arcaneDust || 0) + totalDust;
             }
 
-            // Clean up empty inventory slots
             player.inventory = player.inventory.filter(item => item.quantity > 0);
+
+            if (totalXp > 0) {
+                await grantPlayerXp(client, message, player, totalXp, { labEffects });
+            }
 
             await player.save();
 
-            // Create result message
+            // Build result
             const resultItemData = GameData.getItem(recipe.result.itemId);
-            let resultMsg = "";
+            const resultEmoji = CommandHelpers.getItemEmoji(recipe.result.itemId);
+            const text = buildBrewResultText(
+                { ...resultItemData, quantity: recipe.result.quantity },
+                resultEmoji,
+                successfulBrews, failedBrews, totalDust, brewQuantity, successRate
+            );
 
-            if (successfulBrews > 0 && failedBrews > 0) {
-                // Mixed results
-                const totalResultQuantity = recipe.result.quantity * successfulBrews;
+            let color = 0x22C55E; // green
+            if (successfulBrews > 0 && failedBrews > 0) color = 0xF59E0B; // amber
+            else if (failedBrews > 0) color = 0xEF4444; // red
 
-                resultMsg = `Mixed results! **${successfulBrews}** successful, **${failedBrews}** failed.\n\n`;
-                resultMsg += `✅ Created **${totalResultQuantity}x ${resultItemData.name}**!\n`;
-                resultMsg += `❌ Salvaged **${totalDust} Arcane Dust** from failures.`;
-
-                return {
-                    embed: createInfoEmbed("Brewing Complete", resultMsg)
-                };
-            } else if (successfulBrews > 0) {
-                // All successful
-                let totalResultQuantity = recipe.result.quantity * successfulBrews;
-                
-                resultMsg = `You successfully brewed **${totalResultQuantity}x ${resultItemData.name}**!`;
-                
-                if (brewQuantity > 1) {
-                    resultMsg += ` (${successfulBrews} successful batches)`;
-                }
-
-                return {
-                    embed: createSuccessEmbed("Brewing Success!", resultMsg)
-                };
-            } else {
-                // All failed
-                resultMsg = `All ${failedBrews} brewing attempt${failedBrews > 1 ? 's' : ''} failed! The ingredients fizzled into useless concoctions.\n\n`;
-                resultMsg += `You salvaged **${totalDust} Arcane Dust** from the failures.`;
-
-                return {
-                    embed: createErrorEmbed("Brewing Failed!", resultMsg)
-                };
-            }
+            return { container: buildResultContainer(text, color) };
 
         } catch (error) {
             console.error("Execute brewing error:", error);
-            return {
-                embed: createErrorEmbed(
-                    "Brewing Error",
-                    "An error occurred during the brewing process."
-                )
-            };
+            const text = `# ${e.error} Brewing Error\nAn error occurred during brewing. Please try again.`;
+            return { container: buildResultContainer(text, 0xEF4444) };
         }
     }
 };

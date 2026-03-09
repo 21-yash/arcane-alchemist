@@ -13,14 +13,6 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.GuildModeration,
-        GatewayIntentBits.AutoModerationConfiguration,
-        GatewayIntentBits.AutoModerationExecution,
-        GatewayIntentBits.GuildExpressions,
-        GatewayIntentBits.GuildIntegrations,
-        GatewayIntentBits.GuildWebhooks,
-        GatewayIntentBits.GuildInvites,
-        GatewayIntentBits.GuildScheduledEvents
     ],
     allowedMentions: {
         parse: ["roles", "users"],
@@ -31,6 +23,7 @@ const client = new Client({
 
 client.slashCommands = new Collection();
 client.textCommands = new Collection();
+client.aliases = new Collection();
 client.events = new Collection();
 client.dungeonSessions = new Map();
 
